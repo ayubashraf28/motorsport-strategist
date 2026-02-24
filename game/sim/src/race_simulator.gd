@@ -6,6 +6,7 @@ const PaceProfile = preload("res://sim/src/pace_profile.gd")
 const SpeedProfile = preload("res://sim/src/speed_profile.gd")
 
 const _INTERNAL_INTEGRATION_STEP: float = 1.0 / 120.0
+const _LAP_CROSS_EPSILON: float = 0.000001
 
 var _config: RaceTypes.RaceConfig
 var _runtime: RaceTypes.RaceRuntimeParams
@@ -202,7 +203,10 @@ func _step_car_chunk(car: RaceTypes.CarState, chunk_start_time: float, chunk_dt:
 
 	var previous_distance: float = car.distance_along_track
 	var raw_distance: float = previous_distance + speed * chunk_dt
-	var laps_crossed: int = int(floor(raw_distance / track_length))
+	# Apply a tiny relative epsilon so exact-boundary crossings are not missed by
+	# floating-point accumulation (e.g. 199.9999999998 instead of 200.0).
+	var lap_epsilon: float = maxf(_LAP_CROSS_EPSILON, track_length * 0.000000001)
+	var laps_crossed: int = int(floor((raw_distance + lap_epsilon) / track_length))
 	car.distance_along_track = fposmod(raw_distance, track_length)
 	if laps_crossed <= 0:
 		return
@@ -214,10 +218,12 @@ func _step_car_chunk(car: RaceTypes.CarState, chunk_start_time: float, chunk_dt:
 
 	var time_to_first_cross: float = (track_length - previous_distance) / speed
 	var clamped_time_to_first_cross: float = maxf(time_to_first_cross, 0.0)
-	var first_cross_time: float = chunk_start_time + clamped_time_to_first_cross
+	var chunk_end_time: float = chunk_start_time + chunk_dt
+	var first_cross_time: float = minf(chunk_start_time + clamped_time_to_first_cross, chunk_end_time)
 	var lap_duration: float = track_length / speed
 	for crossing_index in range(laps_crossed):
 		var crossing_time: float = first_cross_time + float(crossing_index) * lap_duration
+		crossing_time = minf(crossing_time, chunk_end_time)
 		_register_lap_crossing(car, crossing_time)
 
 
