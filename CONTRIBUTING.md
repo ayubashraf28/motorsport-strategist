@@ -2,10 +2,16 @@
 
 ## Workflow
 
-1. Branch from `dev` using `feature/*`, `fix/*`, or `chore/*`.
+1. Branch from `main` using `feat/*`, `fix/*`, or `chore/*`.
 2. Keep commits focused and atomic.
-3. Open a pull request into `dev`.
+3. Open a pull request into `main`.
 4. Ensure code review and checks pass before merge.
+
+## Release flow
+
+1. Merge approved pull requests into `main`.
+2. Create `rc-*` tags on `main` for UAT candidates.
+3. Create `vX.Y.Z` tags on `main` for production releases.
 
 ## Commit style
 

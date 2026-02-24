@@ -4,7 +4,8 @@
 
 ## Validation
 
-- [ ] Local tests pass
+- [ ] `sim/` unit tests pass (or not applicable)
+- [ ] `tools/ci/lint.sh` passes locally
 - [ ] Backward compatibility considered
 - [ ] Documentation updated (if needed)
 

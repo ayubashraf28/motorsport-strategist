@@ -1,0 +1,37 @@
+name: Build Main
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dev-build:
+    name: dev-artifact
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create build metadata
+        run: |
+          mkdir -p artifacts
+          echo "run_number=${GITHUB_RUN_NUMBER}" > artifacts/build-metadata.txt
+          echo "commit_sha=${GITHUB_SHA}" >> artifacts/build-metadata.txt
+          echo "ref=${GITHUB_REF_NAME}" >> artifacts/build-metadata.txt
+          echo "created_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> artifacts/build-metadata.txt
+
+      - name: Create source snapshot
+        run: |
+          git archive --format=zip --output artifacts/source-${GITHUB_SHA::7}.zip HEAD
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dev-build-${{ github.run_number }}
+          path: artifacts/

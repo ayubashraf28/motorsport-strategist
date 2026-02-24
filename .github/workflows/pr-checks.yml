@@ -1,0 +1,25 @@
+name: PR Checks
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  guardrails:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Lint checks
+        run: bash tools/ci/lint.sh
+
+      - name: Unit tests
+        run: bash tools/ci/test.sh
+
+      - name: Build sanity
+        run: bash tools/ci/build_sanity.sh

@@ -1,16 +1,22 @@
 # motorsport-strategist
 
-Production-ready repository bootstrap.
+Production-ready repository bootstrap for a `main` + environments workflow.
 
-## Branching model
+## Branching and release model
 
-- `prod`: stable production-ready code
-- `uat`: pre-production validation and release candidate testing
-- `dev`: active development branch
+- `main`: always releasable, protected branch
+- Feature branches: `feat/*`, `fix/*`, `chore/*`
+- UAT candidates: tags `rc-*` from `main`
+- Production releases: tags `vX.Y.Z` from `main`
 
-## Getting started
+## Environments
 
-1. Create feature branches from `dev` (for example: `feature/race-strategy-simulator`).
-2. Merge into `dev` via pull request.
-3. Promote `dev` to `uat` for validation.
-4. Promote `uat` to `prod` for release.
+- `dev`: build artifacts for internal testing on every merge to `main`
+- `uat`: release candidate artifacts from `rc-*` tags
+- `prod`: stable release artifacts from `v*` tags
+
+## Repository layout
+
+- `sim/`: deterministic simulation logic and tests
+- `game/`: Godot project and assets
+- `tools/`: CI helpers and local automation scripts

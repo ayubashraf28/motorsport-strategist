@@ -1,0 +1,32 @@
+name: Release Candidate
+
+on:
+  push:
+    tags:
+      - "rc-*"
+
+permissions:
+  contents: write
+
+jobs:
+  uat-release:
+    runs-on: ubuntu-latest
+    environment: uat
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Package candidate
+        run: |
+          mkdir -p artifacts
+          echo "tag=${GITHUB_REF_NAME}" > artifacts/rc-metadata.txt
+          echo "commit_sha=${GITHUB_SHA}" >> artifacts/rc-metadata.txt
+          echo "created_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> artifacts/rc-metadata.txt
+          git archive --format=zip --output artifacts/rc-${GITHUB_REF_NAME}.zip HEAD
+
+      - name: Create prerelease
+        uses: softprops/action-gh-release@v2
+        with:
+          prerelease: true
+          name: ${{ github.ref_name }}
+          files: artifacts/rc-${{ github.ref_name }}.zip
