@@ -203,11 +203,25 @@ func _step_car_chunk(car: RaceTypes.CarState, chunk_start_time: float, chunk_dt:
 
 	var previous_distance: float = car.distance_along_track
 	var raw_distance: float = previous_distance + speed * chunk_dt
-	# Apply a tiny relative epsilon so exact-boundary crossings are not missed by
-	# floating-point accumulation (e.g. 199.9999999998 instead of 200.0).
 	var lap_epsilon: float = maxf(_LAP_CROSS_EPSILON, track_length * 0.000000001)
-	var laps_crossed: int = int(floor((raw_distance + lap_epsilon) / track_length))
-	car.distance_along_track = fposmod(raw_distance, track_length)
+	var laps_crossed: int = int(floor(raw_distance / track_length))
+	var wrapped_distance: float = raw_distance - (float(laps_crossed) * track_length)
+	var forced_boundary_cross: bool = false
+
+	# Handle near-boundary floating-point cases while keeping lap count and
+	# wrapped distance coherent in the same chunk.
+	if laps_crossed == 0 and (track_length - raw_distance) <= lap_epsilon:
+		laps_crossed = 1
+		wrapped_distance = 0.0
+		forced_boundary_cross = true
+	elif laps_crossed > 0 and abs(wrapped_distance) <= lap_epsilon:
+		wrapped_distance = 0.0
+	elif laps_crossed > 0 and (track_length - wrapped_distance) <= lap_epsilon:
+		laps_crossed += 1
+		wrapped_distance = 0.0
+		forced_boundary_cross = true
+
+	car.distance_along_track = fposmod(wrapped_distance, track_length)
 	if laps_crossed <= 0:
 		return
 
@@ -220,6 +234,8 @@ func _step_car_chunk(car: RaceTypes.CarState, chunk_start_time: float, chunk_dt:
 	var clamped_time_to_first_cross: float = maxf(time_to_first_cross, 0.0)
 	var chunk_end_time: float = chunk_start_time + chunk_dt
 	var first_cross_time: float = minf(chunk_start_time + clamped_time_to_first_cross, chunk_end_time)
+	if forced_boundary_cross and first_cross_time < chunk_end_time:
+		first_cross_time = chunk_end_time
 	var lap_duration: float = track_length / speed
 	for crossing_index in range(laps_crossed):
 		var crossing_time: float = first_cross_time + float(crossing_index) * lap_duration
