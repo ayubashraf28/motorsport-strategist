@@ -20,3 +20,6 @@ Production-ready repository bootstrap for a `main` + environments workflow.
 - `sim/`: deterministic simulation logic and tests
 - `game/`: Godot project and assets
 - `tools/`: CI helpers and local automation scripts
+- `docs/`: architecture notes, ADRs, and UI/UX standards
+- `config/`: shared configuration templates and environment examples
+- `AGENTS.md`: repository working rules for future implementation
