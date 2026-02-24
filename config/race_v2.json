@@ -1,0 +1,69 @@
+{
+  "schema_version": "2.0",
+  "count_first_lap_from_start": true,
+  "seed": 42,
+  "default_time_scale": 1.0,
+  "total_laps": 10,
+  "track": {
+    "geometry_asset": "../data/tracks/monza/monza_centerline.json",
+    "physics": {
+      "a_lat_max": 25.0,
+      "a_long_accel": 8.0,
+      "a_long_brake": 20.0,
+      "v_top_speed": 83.0,
+      "curvature_epsilon": 0.0001
+    }
+  },
+  "degradation": {
+    "warmup_laps": 0.5,
+    "peak_multiplier": 1.0,
+    "degradation_rate": 0.02,
+    "min_multiplier": 0.7
+  },
+  "overtaking": {
+    "enabled": true,
+    "proximity_distance": 50.0,
+    "overtake_speed_threshold": 2.0,
+    "held_up_speed_buffer": 0.1,
+    "cooldown_seconds": 3.0
+  },
+  "cars": [
+    {
+      "id": "car_01",
+      "display_name": "Red Bull",
+      "v_ref": 83.0,
+      "degradation": {
+        "warmup_laps": 0.3,
+        "peak_multiplier": 1.0,
+        "degradation_rate": 0.015,
+        "min_multiplier": 0.75
+      }
+    },
+    {
+      "id": "car_02",
+      "display_name": "Ferrari",
+      "v_ref": 81.0
+    },
+    {
+      "id": "car_03",
+      "display_name": "Mercedes",
+      "v_ref": 80.0,
+      "degradation": {
+        "warmup_laps": 0.5,
+        "peak_multiplier": 1.0,
+        "degradation_rate": 0.025,
+        "min_multiplier": 0.65
+      }
+    },
+    {
+      "id": "car_04",
+      "display_name": "McLaren",
+      "v_ref": 79.0
+    }
+  ],
+  "debug": {
+    "show_pace_profile": false,
+    "show_curvature_overlay": false,
+    "show_speed_overlay": true
+  }
+}

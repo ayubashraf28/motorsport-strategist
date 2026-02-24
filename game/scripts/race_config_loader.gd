@@ -2,12 +2,14 @@ extends RefCounted
 class_name RaceConfigLoader
 
 const RaceTypes = preload("res://sim/src/race_types.gd")
+const DegradationModel = preload("res://sim/src/degradation_model.gd")
 
 
 static func load_race_config(paths: PackedStringArray = PackedStringArray()) -> Dictionary:
 	var candidate_paths: PackedStringArray = paths
 	if candidate_paths.is_empty():
 		candidate_paths = PackedStringArray([
+			ProjectSettings.globalize_path("res://../config/race_v2.json"),
 			ProjectSettings.globalize_path("res://../config/race_v1.1.json"),
 			ProjectSettings.globalize_path("res://../config/race_v1.json")
 		])
@@ -69,7 +71,9 @@ static func _parse_config_json(content: String) -> Dictionary:
 	config.schema_version = schema_version
 
 	_parse_common_fields(root, config, errors)
-	if schema_version == "1.1":
+	if schema_version == "2.0":
+		_parse_v2_config(root, config, errors)
+	elif schema_version == "1.1":
 		_parse_v1_1_config(root, config, errors)
 	else:
 		_parse_v1_config(root, config, errors)
@@ -88,7 +92,7 @@ static func _parse_schema_version(root: Dictionary, errors: PackedStringArray) -
 	var schema_version: String = String(schema_raw).strip_edges()
 	if schema_version.is_empty():
 		return "1.0"
-	if schema_version != "1.0" and schema_version != "1.1":
+	if schema_version != "1.0" and schema_version != "1.1" and schema_version != "2.0":
 		errors.append("Unsupported schema_version '%s'." % schema_version)
 		return "1.0"
 	return schema_version
@@ -114,6 +118,14 @@ static func _parse_common_fields(root: Dictionary, config: RaceTypes.RaceConfig,
 		errors.append("default_time_scale must be numeric.")
 	if config.default_time_scale <= 0.0:
 		errors.append("default_time_scale must be greater than zero.")
+
+	var total_laps_raw: Variant = root.get("total_laps", 0)
+	if _is_numeric(total_laps_raw):
+		config.total_laps = int(total_laps_raw)
+		if config.total_laps < 0:
+			errors.append("total_laps must be >= 0.")
+	else:
+		errors.append("total_laps must be numeric.")
 
 	var debug_raw: Variant = root.get("debug", {})
 	if typeof(debug_raw) == TYPE_DICTIONARY:
@@ -172,6 +184,37 @@ static func _parse_v1_1_config(root: Dictionary, config: RaceTypes.RaceConfig, e
 	config.cars = _parse_v1_1_cars(cars_raw, errors)
 	if config.cars.is_empty():
 		errors.append("At least one valid car entry is required.")
+
+
+static func _parse_v2_config(root: Dictionary, config: RaceTypes.RaceConfig, errors: PackedStringArray) -> void:
+	_parse_v1_1_config(root, config, errors)
+
+	var global_degradation_raw: Variant = root.get("degradation", null)
+	if global_degradation_raw != null:
+		if typeof(global_degradation_raw) != TYPE_DICTIONARY:
+			errors.append("degradation must be an object when provided.")
+		else:
+			var global_degradation_result: Dictionary = _parse_degradation_config(global_degradation_raw, "degradation")
+			var global_degradation_errors: PackedStringArray = global_degradation_result.get("errors", PackedStringArray())
+			for degradation_error in global_degradation_errors:
+				errors.append(degradation_error)
+			config.degradation = global_degradation_result.get("config", null)
+
+	var overtaking_raw: Variant = root.get("overtaking", null)
+	if overtaking_raw != null:
+		if typeof(overtaking_raw) != TYPE_DICTIONARY:
+			errors.append("overtaking must be an object when provided.")
+		else:
+			var overtaking_result: Dictionary = _parse_overtaking_config(overtaking_raw, "overtaking")
+			var overtaking_errors: PackedStringArray = overtaking_result.get("errors", PackedStringArray())
+			for overtaking_error in overtaking_errors:
+				errors.append(overtaking_error)
+			config.overtaking = overtaking_result.get("config", null)
+
+	var cars_raw: Variant = root.get("cars", [])
+	if typeof(cars_raw) == TYPE_ARRAY:
+		var cars_array: Array = cars_raw
+		_apply_v2_car_overrides(cars_array, config.cars, errors)
 
 
 static func _parse_pace_track(track_raw: Dictionary) -> Dictionary:
@@ -341,6 +384,42 @@ static func _parse_v1_1_cars(cars_raw: Variant, errors: PackedStringArray) -> Ar
 	return cars
 
 
+static func _apply_v2_car_overrides(cars_raw: Array, cars: Array[RaceTypes.CarConfig], errors: PackedStringArray) -> void:
+	var cars_by_id: Dictionary = {}
+	for car in cars:
+		if car != null and not car.id.is_empty():
+			cars_by_id[car.id] = car
+
+	for index in range(cars_raw.size()):
+		var entry: Variant = cars_raw[index]
+		if typeof(entry) != TYPE_DICTIONARY:
+			continue
+
+		var car_dict: Dictionary = entry
+		var id_raw: Variant = car_dict.get("id", "")
+		if typeof(id_raw) != TYPE_STRING:
+			continue
+		var car_id: String = String(id_raw).strip_edges()
+		if car_id.is_empty() or not cars_by_id.has(car_id):
+			continue
+
+		var degradation_raw: Variant = car_dict.get("degradation", null)
+		if degradation_raw == null:
+			continue
+		if typeof(degradation_raw) != TYPE_DICTIONARY:
+			errors.append("cars[%d].degradation must be an object when provided." % index)
+			continue
+		var parse_result: Dictionary = _parse_degradation_config(
+			degradation_raw,
+			"cars[%d].degradation" % index
+		)
+		var parse_errors: PackedStringArray = parse_result.get("errors", PackedStringArray())
+		for parse_error in parse_errors:
+			errors.append(parse_error)
+		var target_car: RaceTypes.CarConfig = cars_by_id[car_id]
+		target_car.degradation = parse_result.get("config", null)
+
+
 static func _read_car_id(
 	car_dict: Dictionary,
 	index: int,
@@ -393,6 +472,80 @@ static func _parse_debug(debug_raw: Dictionary) -> Dictionary:
 		debug.show_speed_overlay = show_speed_raw
 
 	return {"debug": debug, "errors": errors}
+
+
+static func _parse_degradation_config(config_raw: Dictionary, context: String) -> Dictionary:
+	var errors: PackedStringArray = PackedStringArray()
+	var config: RaceTypes.DegradationConfig = RaceTypes.DegradationConfig.new()
+
+	if config_raw.has("warmup_laps"):
+		if _is_numeric(config_raw["warmup_laps"]):
+			config.warmup_laps = float(config_raw["warmup_laps"])
+		else:
+			errors.append("%s.warmup_laps must be numeric." % context)
+	if config_raw.has("peak_multiplier"):
+		if _is_numeric(config_raw["peak_multiplier"]):
+			config.peak_multiplier = float(config_raw["peak_multiplier"])
+		else:
+			errors.append("%s.peak_multiplier must be numeric." % context)
+	if config_raw.has("degradation_rate"):
+		if _is_numeric(config_raw["degradation_rate"]):
+			config.degradation_rate = float(config_raw["degradation_rate"])
+		else:
+			errors.append("%s.degradation_rate must be numeric." % context)
+	if config_raw.has("min_multiplier"):
+		if _is_numeric(config_raw["min_multiplier"]):
+			config.min_multiplier = float(config_raw["min_multiplier"])
+		else:
+			errors.append("%s.min_multiplier must be numeric." % context)
+
+	var validation_errors: PackedStringArray = DegradationModel.validate_config(config)
+	for validation_error in validation_errors:
+		errors.append("%s: %s" % [context, validation_error])
+
+	return {"config": config, "errors": errors}
+
+
+static func _parse_overtaking_config(config_raw: Dictionary, context: String) -> Dictionary:
+	var errors: PackedStringArray = PackedStringArray()
+	var config: RaceTypes.OvertakingConfig = RaceTypes.OvertakingConfig.new()
+
+	if config_raw.has("enabled"):
+		if typeof(config_raw["enabled"]) == TYPE_BOOL:
+			config.enabled = config_raw["enabled"]
+		else:
+			errors.append("%s.enabled must be a boolean." % context)
+	if config_raw.has("proximity_distance"):
+		if _is_numeric(config_raw["proximity_distance"]):
+			config.proximity_distance = float(config_raw["proximity_distance"])
+		else:
+			errors.append("%s.proximity_distance must be numeric." % context)
+	if config_raw.has("overtake_speed_threshold"):
+		if _is_numeric(config_raw["overtake_speed_threshold"]):
+			config.overtake_speed_threshold = float(config_raw["overtake_speed_threshold"])
+		else:
+			errors.append("%s.overtake_speed_threshold must be numeric." % context)
+	if config_raw.has("held_up_speed_buffer"):
+		if _is_numeric(config_raw["held_up_speed_buffer"]):
+			config.held_up_speed_buffer = float(config_raw["held_up_speed_buffer"])
+		else:
+			errors.append("%s.held_up_speed_buffer must be numeric." % context)
+	if config_raw.has("cooldown_seconds"):
+		if _is_numeric(config_raw["cooldown_seconds"]):
+			config.cooldown_seconds = float(config_raw["cooldown_seconds"])
+		else:
+			errors.append("%s.cooldown_seconds must be numeric." % context)
+
+	if config.proximity_distance < 0.0:
+		errors.append("%s.proximity_distance must be >= 0." % context)
+	if config.overtake_speed_threshold < 0.0:
+		errors.append("%s.overtake_speed_threshold must be >= 0." % context)
+	if config.held_up_speed_buffer < 0.0:
+		errors.append("%s.held_up_speed_buffer must be >= 0." % context)
+	if config.cooldown_seconds < 0.0:
+		errors.append("%s.cooldown_seconds must be >= 0." % context)
+
+	return {"config": config, "errors": errors}
 
 
 static func _read_positive_float(

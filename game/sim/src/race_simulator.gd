@@ -4,6 +4,10 @@ class_name RaceSimulator
 const RaceTypes = preload("res://sim/src/race_types.gd")
 const PaceProfile = preload("res://sim/src/pace_profile.gd")
 const SpeedProfile = preload("res://sim/src/speed_profile.gd")
+const StandingsCalculator = preload("res://sim/src/standings_calculator.gd")
+const RaceStateMachine = preload("res://sim/src/race_state_machine.gd")
+const DegradationModel = preload("res://sim/src/degradation_model.gd")
+const OvertakingManager = preload("res://sim/src/overtaking_manager.gd")
 
 const _INTERNAL_INTEGRATION_STEP: float = 1.0 / 120.0
 const _LAP_CROSS_EPSILON: float = 0.000001
@@ -17,6 +21,9 @@ var _speed_profile: SpeedProfile = null
 var _physics_config: RaceTypes.PhysicsVehicleConfig = null
 var _is_ready: bool = false
 var _validation_errors: PackedStringArray = PackedStringArray()
+var _race_state_machine: RaceStateMachine = RaceStateMachine.new()
+var _car_degradation_configs: Dictionary = {}
+var _overtaking_manager: OvertakingManager = OvertakingManager.new()
 
 
 func initialize(config: RaceTypes.RaceConfig, runtime: RaceTypes.RaceRuntimeParams) -> void:
@@ -26,6 +33,9 @@ func initialize(config: RaceTypes.RaceConfig, runtime: RaceTypes.RaceRuntimePara
 	_pace_profile = null
 	_speed_profile = null
 	_physics_config = null
+	_race_state_machine = RaceStateMachine.new()
+	_car_degradation_configs.clear()
+	_overtaking_manager = OvertakingManager.new()
 
 	_validate_inputs(config, runtime)
 	if not _validation_errors.is_empty():
@@ -49,35 +59,73 @@ func initialize(config: RaceTypes.RaceConfig, runtime: RaceTypes.RaceRuntimePara
 		state.v_ref = car_config.v_ref if car_config.v_ref > 0.0 else car_config.base_speed_units_per_sec
 		state.reset_runtime_state()
 		_cars.append(state)
+		_car_degradation_configs[state.id] = _resolve_degradation_config_for_car(car_config, _config.degradation)
 
+	_race_state_machine.configure(_config.total_laps, _cars.size())
+	_overtaking_manager.configure(_config.overtaking)
 	_is_ready = true
 	reset()
 
 
 func reset() -> void:
 	_race_time = 0.0
+	if _race_state_machine != null:
+		_race_state_machine.reset()
+	if _overtaking_manager != null:
+		_overtaking_manager.reset()
 	for car in _cars:
 		car.reset_runtime_state()
+	_update_standings()
 
 
 func step(dt_seconds: float) -> void:
 	if not _is_ready or dt_seconds <= 0.0:
 		return
+	if _race_state_machine != null and _race_state_machine.get_state() == RaceTypes.RaceState.FINISHED:
+		return
+	if _race_state_machine != null and _race_state_machine.get_state() == RaceTypes.RaceState.NOT_STARTED:
+		_race_state_machine.on_race_start()
 
 	var remaining_dt: float = dt_seconds
 	while remaining_dt > 0.0000001:
 		var chunk_dt: float = minf(remaining_dt, _INTERNAL_INTEGRATION_STEP)
 		var chunk_start_time: float = _race_time
+
+		# Phase 1: compute each car's natural speed.
 		for car in _cars:
-			_step_car_chunk(car, chunk_start_time, chunk_dt)
+			if _race_state_machine != null and not _race_state_machine.is_car_racing(car):
+				car.effective_speed_units_per_sec = 0.0
+				car.is_held_up = false
+				car.held_up_by = ""
+				continue
+			_compute_car_speed(car)
+
+		# Phase 2: resolve overtaking interactions against precomputed speeds.
+		if _overtaking_manager != null and _overtaking_manager.is_enabled():
+			_overtaking_manager.process_interactions(_cars, _runtime.track_length, _race_time)
+
+		# Phase 3: apply movement and lap-crossing updates.
+		for car in _cars:
+			if _race_state_machine != null and not _race_state_machine.is_car_racing(car):
+				continue
+			_apply_car_movement(car, chunk_start_time, chunk_dt)
+
+		# Phase 4: update standings from latest distances.
+		_update_standings()
 
 		_race_time += chunk_dt
 		remaining_dt -= chunk_dt
+		if _race_state_machine != null and _race_state_machine.get_state() == RaceTypes.RaceState.FINISHED:
+			break
 
 
 func get_snapshot() -> RaceTypes.RaceSnapshot:
 	var snapshot: RaceTypes.RaceSnapshot = RaceTypes.RaceSnapshot.new()
 	snapshot.race_time = _race_time
+	snapshot.total_laps = _config.total_laps if _config != null else 0
+	if _race_state_machine != null:
+		snapshot.race_state = _race_state_machine.get_state()
+		snapshot.finish_order = _race_state_machine.get_finish_order()
 	for car in _cars:
 		snapshot.cars.append(car.clone())
 	return snapshot
@@ -138,8 +186,25 @@ func _validate_inputs(config: RaceTypes.RaceConfig, runtime: RaceTypes.RaceRunti
 			if car.base_speed_units_per_sec <= 0.0:
 				_validation_errors.append("Car '%s' base_speed_units_per_sec must be > 0." % clean_id)
 
+		var car_deg_errors: PackedStringArray = DegradationModel.validate_config(car.degradation)
+		for err in car_deg_errors:
+			_validation_errors.append("Car '%s' %s" % [clean_id, err])
+
 	if config.is_physics_profile() and runtime.geometry == null:
 		_validation_errors.append("Track geometry runtime data is required for schema 1.1.")
+
+	var global_deg_errors: PackedStringArray = DegradationModel.validate_config(config.degradation)
+	for err in global_deg_errors:
+		_validation_errors.append("Global %s" % err)
+	if config.overtaking != null:
+		if config.overtaking.proximity_distance < 0.0:
+			_validation_errors.append("overtaking.proximity_distance must be >= 0.")
+		if config.overtaking.overtake_speed_threshold < 0.0:
+			_validation_errors.append("overtaking.overtake_speed_threshold must be >= 0.")
+		if config.overtaking.held_up_speed_buffer < 0.0:
+			_validation_errors.append("overtaking.held_up_speed_buffer must be >= 0.")
+		if config.overtaking.cooldown_seconds < 0.0:
+			_validation_errors.append("overtaking.cooldown_seconds must be >= 0.")
 
 
 func _initialize_pace_profile() -> void:
@@ -177,7 +242,13 @@ func _initialize_speed_profile() -> void:
 			_validation_errors.append(speed_error)
 
 
-func _step_car_chunk(car: RaceTypes.CarState, chunk_start_time: float, chunk_dt: float) -> void:
+func _compute_car_speed(car: RaceTypes.CarState) -> void:
+	if car == null:
+		return
+
+	car.is_held_up = false
+	car.held_up_by = ""
+
 	var speed: float = 0.0
 	if _speed_profile != null:
 		var raw_speed: float = _speed_profile.sample_speed(car.distance_along_track)
@@ -194,11 +265,21 @@ func _step_car_chunk(car: RaceTypes.CarState, chunk_start_time: float, chunk_dt:
 		car.current_multiplier = pace_multiplier
 
 	car.effective_speed_units_per_sec = speed
-	if speed <= 0.0:
+	var deg_config: RaceTypes.DegradationConfig = _car_degradation_configs.get(car.id, null)
+	var fractional_lap: float = car.distance_along_track / _runtime.track_length if _runtime.track_length > 0.0 else 0.0
+	car.degradation_multiplier = DegradationModel.compute_multiplier(car.lap_count, fractional_lap, deg_config)
+	speed *= car.degradation_multiplier
+	speed = maxf(speed, 0.001)
+	car.effective_speed_units_per_sec = speed
+
+
+func _apply_car_movement(car: RaceTypes.CarState, chunk_start_time: float, chunk_dt: float) -> void:
+	if car == null:
 		return
 
+	var speed: float = car.effective_speed_units_per_sec
 	var track_length: float = _runtime.track_length
-	if track_length <= 0.0:
+	if track_length <= 0.0 or speed <= 0.0:
 		return
 
 	var previous_distance: float = car.distance_along_track
@@ -241,9 +322,14 @@ func _step_car_chunk(car: RaceTypes.CarState, chunk_start_time: float, chunk_dt:
 		var crossing_time: float = first_cross_time + float(crossing_index) * lap_duration
 		crossing_time = minf(crossing_time, chunk_end_time)
 		_register_lap_crossing(car, crossing_time)
+		if car.is_finished:
+			break
 
 
 func _register_lap_crossing(car: RaceTypes.CarState, crossing_time: float) -> void:
+	if car == null or car.is_finished:
+		return
+
 	# Out-lap handling is explicit so race modes can adjust policy later without
 	# touching crossing detection and accumulation logic.
 	if not _config.count_first_lap_from_start and car.last_lap_time < 0.0 and car.lap_count == 0:
@@ -256,3 +342,26 @@ func _register_lap_crossing(car: RaceTypes.CarState, crossing_time: float) -> vo
 	car.best_lap_time = minf(car.best_lap_time, lap_time)
 	car.lap_start_time = crossing_time
 	car.lap_count += 1
+	if _race_state_machine != null:
+		_race_state_machine.on_lap_completed(car, crossing_time)
+		if car.is_finished:
+			car.distance_along_track = 0.0
+			car.effective_speed_units_per_sec = 0.0
+
+
+func _update_standings() -> void:
+	var track_length: float = _runtime.track_length if _runtime != null else 0.0
+	for car in _cars:
+		car.total_distance = float(car.lap_count) * track_length + car.distance_along_track
+	StandingsCalculator.update_positions(_cars)
+
+
+func _resolve_degradation_config_for_car(
+	car_config: RaceTypes.CarConfig,
+	global_config: RaceTypes.DegradationConfig
+) -> RaceTypes.DegradationConfig:
+	if car_config != null and car_config.degradation != null:
+		return car_config.degradation.clone()
+	if global_config != null:
+		return global_config.clone()
+	return null

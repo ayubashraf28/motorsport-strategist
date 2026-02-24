@@ -6,6 +6,7 @@ signal reset_requested()
 signal speed_selected(speed_scale: float)
 
 const RaceTypes = preload("res://sim/src/race_types.gd")
+const StandingsCalculator = preload("res://sim/src/standings_calculator.gd")
 
 @onready var _state_label: Label = %StateLabel
 @onready var _body_grid: GridContainer = %BodyGrid
@@ -56,22 +57,28 @@ func render(snapshot: RaceTypes.RaceSnapshot, is_paused: bool, time_scale: float
 
 	_is_paused = is_paused
 	_pause_button.text = "Resume" if _is_paused else "Pause"
-	set_status_message(
-		"%s | Time Scale %.1fx | Race Time %s" % [
-			"Paused" if _is_paused else "Running",
-			time_scale,
-			_format_time(snapshot.race_time)
-		]
-	)
+	set_status_message(_build_state_message(snapshot, time_scale))
 
-	_sync_rows(snapshot.cars)
-	for car in snapshot.cars:
+	var cars_sorted: Array[RaceTypes.CarState] = _sort_cars_for_board(snapshot.cars)
+	var interval_map: Dictionary = StandingsCalculator.compute_interval_to_car_ahead(snapshot.cars)
+	var winner_finish_time: float = _get_winner_finish_time(snapshot)
+
+	_sync_rows(cars_sorted)
+	for car in cars_sorted:
 		var row: Dictionary = _row_labels.get(car.id, {})
 		if row.is_empty():
 			continue
+		row["position"].text = _format_position_cell(car)
 		row["id"].text = car.id
-		row["speed"].text = _format_speed(car.effective_speed_units_per_sec)
+		row["speed"].text = _format_speed(car.effective_speed_units_per_sec, car.is_held_up)
 		row["lap_count"].text = str(car.lap_count)
+		row["gap"].text = _format_gap(
+			interval_map.get(car.id, 0.0),
+			car.effective_speed_units_per_sec,
+			car,
+			winner_finish_time
+		)
+		row["degradation"].text = _format_degradation(car.degradation_multiplier)
 		row["current_lap"].text = _format_time(maxf(snapshot.race_time - car.lap_start_time, 0.0))
 		row["last_lap"].text = _format_optional_time(car.last_lap_time)
 		row["best_lap"].text = _format_optional_time(car.best_lap_time)
@@ -111,28 +118,37 @@ func _sync_rows(cars: Array) -> void:
 
 
 func _create_row() -> Dictionary:
+	var position_label := _create_grid_label()
 	var id_label := _create_grid_label()
 	var speed_label := _create_grid_label()
 	var lap_count_label := _create_grid_label()
+	var gap_label := _create_grid_label()
+	var degradation_label := _create_grid_label()
 	var current_lap_label := _create_grid_label()
 	var last_lap_label := _create_grid_label()
 	var best_lap_label := _create_grid_label()
 
+	_body_grid.add_child(position_label)
 	_body_grid.add_child(id_label)
 	_body_grid.add_child(speed_label)
 	_body_grid.add_child(lap_count_label)
+	_body_grid.add_child(gap_label)
+	_body_grid.add_child(degradation_label)
 	_body_grid.add_child(current_lap_label)
 	_body_grid.add_child(last_lap_label)
 	_body_grid.add_child(best_lap_label)
 
 	return {
+		"position": position_label,
 		"id": id_label,
 		"speed": speed_label,
 		"lap_count": lap_count_label,
+		"gap": gap_label,
+		"degradation": degradation_label,
 		"current_lap": current_lap_label,
 		"last_lap": last_lap_label,
 		"best_lap": best_lap_label,
-		"cells": [id_label, speed_label, lap_count_label, current_lap_label, last_lap_label, best_lap_label]
+		"cells": [position_label, id_label, speed_label, lap_count_label, gap_label, degradation_label, current_lap_label, last_lap_label, best_lap_label]
 	}
 
 
@@ -153,5 +169,105 @@ func _format_optional_time(value_seconds: float) -> String:
 	return "%.3f s" % value_seconds
 
 
-func _format_speed(speed_units_per_sec: float) -> String:
-	return "%.1f u/s" % speed_units_per_sec
+func _format_speed(speed_units_per_sec: float, is_held_up: bool) -> String:
+	var suffix: String = " [H]" if is_held_up else ""
+	return "%.1f u/s%s" % [speed_units_per_sec, suffix]
+
+
+func _format_degradation(multiplier: float) -> String:
+	return "%d%%" % int(round(multiplier * 100.0))
+
+
+func _format_gap(
+	interval_distance: float,
+	speed_units_per_sec: float,
+	car: RaceTypes.CarState,
+	winner_finish_time: float
+) -> String:
+	if car != null and car.is_finished:
+		var finish_prefix: String = "F%d" % car.finish_position if car.finish_position > 0 else "--"
+		if car.finish_position <= 1:
+			return finish_prefix
+		if winner_finish_time < 0.0 or car.finish_time < 0.0:
+			return finish_prefix
+		var delta: float = maxf(car.finish_time - winner_finish_time, 0.0)
+		return "%s +%.3fs" % [finish_prefix, delta]
+
+	if car == null or car.position <= 1:
+		return "Leader"
+	if speed_units_per_sec <= 0.0:
+		return "--"
+	return "%.3f s" % (interval_distance / speed_units_per_sec)
+
+
+func _sort_cars_for_board(cars: Array) -> Array[RaceTypes.CarState]:
+	var typed_cars: Array[RaceTypes.CarState] = []
+	for raw_car in cars:
+		var car: RaceTypes.CarState = raw_car as RaceTypes.CarState
+		if car != null:
+			typed_cars.append(car)
+
+	typed_cars.sort_custom(func(a: RaceTypes.CarState, b: RaceTypes.CarState) -> bool:
+		var a_board_position: int = a.finish_position if a.is_finished and a.finish_position > 0 else a.position
+		var b_board_position: int = b.finish_position if b.is_finished and b.finish_position > 0 else b.position
+		if a_board_position != b_board_position:
+			return a_board_position < b_board_position
+		return a.id < b.id
+	)
+	return typed_cars
+
+
+func _build_state_message(snapshot: RaceTypes.RaceSnapshot, time_scale: float) -> String:
+	var race_status: String = "Running"
+	match snapshot.race_state:
+		RaceTypes.RaceState.NOT_STARTED:
+			race_status = "Not Started"
+		RaceTypes.RaceState.RUNNING:
+			if snapshot.total_laps > 0:
+				var leader_lap: int = _get_leader_lap(snapshot.cars)
+				race_status = "Running Lap %d/%d" % [min(leader_lap + 1, snapshot.total_laps), snapshot.total_laps]
+			else:
+				race_status = "Running"
+		RaceTypes.RaceState.FINISHING:
+			race_status = "Finishing..."
+		RaceTypes.RaceState.FINISHED:
+			race_status = "Race Over"
+
+	return "%s%s | Time Scale %.1fx | Race Time %s" % [
+		"Paused | " if _is_paused else "",
+		race_status,
+		time_scale,
+		_format_time(snapshot.race_time)
+	]
+
+
+func _get_leader_lap(cars: Array) -> int:
+	var leader_lap: int = 0
+	for raw_car in cars:
+		var car: RaceTypes.CarState = raw_car as RaceTypes.CarState
+		if car == null:
+			continue
+		if car.position == 1:
+			return car.lap_count
+		leader_lap = max(leader_lap, car.lap_count)
+	return leader_lap
+
+
+func _format_position_cell(car: RaceTypes.CarState) -> String:
+	if car == null:
+		return "--"
+	if car.is_finished and car.finish_position > 0:
+		return "F%d" % car.finish_position
+	return str(car.position)
+
+
+func _get_winner_finish_time(snapshot: RaceTypes.RaceSnapshot) -> float:
+	if snapshot.finish_order.is_empty():
+		return -1.0
+
+	var winner_id: String = snapshot.finish_order[0]
+	for raw_car in snapshot.cars:
+		var car: RaceTypes.CarState = raw_car as RaceTypes.CarState
+		if car != null and car.id == winner_id:
+			return car.finish_time
+	return -1.0

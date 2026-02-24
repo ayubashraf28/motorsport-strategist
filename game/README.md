@@ -10,7 +10,7 @@ Boundaries:
 Run:
 - open `game/project.godot` in Godot 4.6.x
 - main scene: `res://scenes/main.tscn`
-- race config lookup order: `../config/race_v1.1.json`, then `../config/race_v1.json`
+- race config lookup order: `../config/race_v2.json`, then `../config/race_v1.1.json`, then `../config/race_v1.json`
 - debug toggle: press `D`
 - V1.1 cycles speed/curvature/off overlays
 - V1 cycles pace/off overlay
