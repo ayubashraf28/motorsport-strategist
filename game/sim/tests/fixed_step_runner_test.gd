@@ -41,7 +41,7 @@ func test_identical_input_dt_sequence_produces_identical_snapshots() -> void:
 	assert(snapshot_a.cars.size() == snapshot_b.cars.size())
 	assert(snapshot_a.cars[0].lap_count == snapshot_b.cars[0].lap_count)
 	assert(abs(snapshot_a.cars[0].distance_along_track - snapshot_b.cars[0].distance_along_track) < 0.0000001)
-	assert(abs(snapshot_a.cars[0].best_lap_time - snapshot_b.cars[0].best_lap_time) < 0.0000001)
+	_assert_optional_time_equal(snapshot_a.cars[0].best_lap_time, snapshot_b.cars[0].best_lap_time, 0.0000001)
 
 
 func test_identical_input_with_pace_profile_is_deterministic() -> void:
@@ -194,3 +194,10 @@ func _straight_geometry(track_length: float, ds: float) -> RaceTypes.TrackGeomet
 	for i in range(sample_count):
 		geometry.curvatures[i] = 0.0
 	return geometry
+
+
+func _assert_optional_time_equal(a: float, b: float, epsilon: float) -> void:
+	if is_inf(a) or is_inf(b):
+		assert(is_inf(a) and is_inf(b))
+		return
+	assert(abs(a - b) < epsilon)
