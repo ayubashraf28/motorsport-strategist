@@ -8,9 +8,10 @@ Coverage priorities:
 - reset/initial state invariants
 - validation failures for malformed configuration
 - reproducibility under identical fixed-step input sequences
+- pace profile validation and smooth transition guarantees
 
 Local invocation:
-1. Open `game/project.godot` in Godot 4.5.x.
+1. Open `game/project.godot` in Godot 4.6.x.
 2. Install GdUnit4 locally in `game/addons/gdUnit4`.
 3. Run the `res://sim/tests` suites from the GdUnit test panel.
 

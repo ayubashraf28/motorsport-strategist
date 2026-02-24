@@ -6,6 +6,7 @@ const FixedStepRunner = preload("res://sim/src/fixed_step_runner.gd")
 const RaceConfigLoader = preload("res://scripts/race_config_loader.gd")
 const TrackSampler = preload("res://scripts/track_sampler.gd")
 const CarDot = preload("res://scripts/car_dot.gd")
+const PaceDebugOverlay = preload("res://scripts/pace_debug_overlay.gd")
 
 const FIXED_DT: float = 1.0 / 120.0
 const MAX_STEPS_PER_FRAME: int = 16
@@ -25,6 +26,8 @@ const CAR_COLORS := [
 
 @onready var _track_path: Path2D = %TrackPath
 @onready var _track_line: Line2D = %TrackLine
+@onready var _start_finish_marker: Line2D = %StartFinishMarker
+@onready var _pace_debug_overlay: PaceDebugOverlay = %PaceDebugOverlay
 @onready var _cars_layer: Node2D = %CarsLayer
 @onready var _hud: RaceHud = %RaceHud
 
@@ -36,6 +39,7 @@ var _time_scale: float = 1.0
 var _is_paused: bool = false
 var _runtime_ready: bool = false
 var _last_spiral_warning_ms: int = 0
+var _show_pace_profile_debug: bool = true
 
 
 func _ready() -> void:
@@ -80,6 +84,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_4:
 				_set_time_scale(4.0)
 				get_viewport().set_input_as_handled()
+			KEY_D:
+				_toggle_pace_profile_debug()
+				get_viewport().set_input_as_handled()
 
 
 func _initialize_track() -> bool:
@@ -97,6 +104,7 @@ func _initialize_track() -> bool:
 	_track_line.points = _track_sampler.get_polyline()
 	_track_line.closed = false
 	_cars_layer.position = _track_path.position
+	_update_start_finish_marker()
 	return true
 
 
@@ -115,7 +123,7 @@ func _initialize_simulator() -> bool:
 		return false
 
 	if race_config.cars.is_empty():
-		_hud.set_empty("No cars configured. Add cars in config/race_v0.json.")
+		_hud.set_empty("No cars configured. Add cars in config/race_v1.json.")
 		return false
 
 	_simulator = RaceSimulator.new()
@@ -128,8 +136,10 @@ func _initialize_simulator() -> bool:
 		return false
 
 	_time_scale = _sanitize_time_scale(race_config.default_time_scale)
+	_show_pace_profile_debug = race_config.debug.show_pace_profile if race_config.debug != null else true
 	_is_paused = false
 	_step_runner.reset()
+	_configure_pace_debug_overlay(race_config, runtime.track_length)
 	_build_car_nodes(_simulator.get_snapshot().cars)
 	return true
 
@@ -216,11 +226,62 @@ func _maybe_warn_spiral_of_death() -> void:
 	push_warning("Fixed-step loop hit MAX_STEPS_PER_FRAME. Simulation is throttling.")
 
 
+func _update_start_finish_marker() -> void:
+	if _start_finish_marker == null:
+		return
+
+	_start_finish_marker.position = _track_path.position
+	var distance_at_line: float = 0.0
+	var line_center: Vector2 = _track_sampler.sample_position(distance_at_line)
+	var tangent: Vector2 = _track_sampler.sample_tangent(distance_at_line)
+	var normal: Vector2 = Vector2(-tangent.y, tangent.x).normalized()
+	var half_width: float = 22.0
+	_start_finish_marker.points = PackedVector2Array([
+		line_center - normal * half_width,
+		line_center + normal * half_width
+	])
+
+
+func _configure_pace_debug_overlay(config: RaceTypes.RaceConfig, track_length: float) -> void:
+	if _pace_debug_overlay == null:
+		return
+
+	var blend_distance: float = 0.0
+	var segments: Array[RaceTypes.PaceSegmentConfig] = []
+	if config.track != null:
+		blend_distance = config.track.blend_distance
+		segments = config.track.pace_segments
+
+	_pace_debug_overlay.position = _track_path.position
+	_pace_debug_overlay.configure(
+		_track_sampler,
+		track_length,
+		blend_distance,
+		segments
+	)
+	_pace_debug_overlay.visible = _show_pace_profile_debug
+
+
+func _toggle_pace_profile_debug() -> void:
+	_show_pace_profile_debug = not _show_pace_profile_debug
+	if _pace_debug_overlay != null:
+		_pace_debug_overlay.visible = _show_pace_profile_debug
+
+
 func _build_default_curve() -> Curve2D:
 	var curve := Curve2D.new()
 	curve.bake_interval = TRACK_BAKE_INTERVAL
-	curve.add_point(Vector2(0.0, -260.0), Vector2(-180.0, 0.0), Vector2(180.0, 0.0))
-	curve.add_point(Vector2(420.0, 0.0), Vector2(0.0, -160.0), Vector2(0.0, 160.0))
-	curve.add_point(Vector2(0.0, 260.0), Vector2(180.0, 0.0), Vector2(-180.0, 0.0))
-	curve.add_point(Vector2(-420.0, 0.0), Vector2(0.0, 160.0), Vector2(0.0, -160.0))
+	# Monza-inspired layout: long straights, two tight chicanes, medium-speed bends,
+	# and a long final corner feeding back onto the main straight.
+	curve.add_point(Vector2(-312.48, -17.36), Vector2(-104.16, 52.08), Vector2(156.24, 0.0))
+	curve.add_point(Vector2(312.48, -21.7), Vector2(-190.96, 0.0), Vector2(60.76, 34.72))
+	curve.add_point(Vector2(355.88, 60.76), Vector2(-34.72, -26.04), Vector2(8.68, 52.08))
+	curve.add_point(Vector2(282.1, 125.86), Vector2(60.76, -17.36), Vector2(43.4, 52.08))
+	curve.add_point(Vector2(312.48, 217.0), Vector2(-26.04, -43.4), Vector2(-78.12, 34.72))
+	curve.add_point(Vector2(217.0, 260.4), Vector2(60.76, -17.36), Vector2(-60.76, 34.72))
+	curve.add_point(Vector2(121.52, 234.36), Vector2(43.4, 17.36), Vector2(-121.52, 13.02))
+	curve.add_point(Vector2(-156.24, 251.72), Vector2(104.16, -8.68), Vector2(-69.44, 60.76))
+	curve.add_point(Vector2(-260.4, 164.92), Vector2(34.72, 34.72), Vector2(-17.36, -69.44))
+	curve.add_point(Vector2(-312.48, 60.76), Vector2(13.02, 56.42), Vector2(-26.04, -104.16))
+	curve.add_point(Vector2(-381.92, -112.84), Vector2(0.0, 69.44), Vector2(104.16, -69.44))
 	return curve

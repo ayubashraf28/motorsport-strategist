@@ -2,11 +2,15 @@ extends RefCounted
 class_name RaceSimulator
 
 const RaceTypes = preload("res://sim/src/race_types.gd")
+const PaceProfile = preload("res://sim/src/pace_profile.gd")
+
+const _INTERNAL_INTEGRATION_STEP: float = 1.0 / 120.0
 
 var _config: RaceTypes.RaceConfig
 var _runtime: RaceTypes.RaceRuntimeParams
 var _cars: Array[RaceTypes.CarState] = []
 var _race_time: float = 0.0
+var _pace_profile: PaceProfile = PaceProfile.new()
 var _is_ready: bool = false
 var _validation_errors: PackedStringArray = PackedStringArray()
 
@@ -22,12 +26,23 @@ func initialize(config: RaceTypes.RaceConfig, runtime: RaceTypes.RaceRuntimePara
 
 	_config = config.clone()
 	_runtime = runtime.clone()
+	_pace_profile = PaceProfile.new()
+	_pace_profile.configure(
+		_runtime.track_length,
+		_config.track.blend_distance,
+		_config.track.pace_segments
+	)
+
+	if not _pace_profile.is_valid():
+		for pace_error in _pace_profile.get_validation_errors():
+			_validation_errors.append(pace_error)
+		return
 
 	for car_config in _config.cars:
 		var state := RaceTypes.CarState.new()
 		state.id = car_config.id
 		state.display_name = car_config.display_name
-		state.speed_units_per_sec = car_config.speed_units_per_sec
+		state.base_speed_units_per_sec = car_config.base_speed_units_per_sec
 		state.reset_runtime_state()
 		_cars.append(state)
 
@@ -45,12 +60,15 @@ func step(dt_seconds: float) -> void:
 	if not _is_ready or dt_seconds <= 0.0:
 		return
 
-	var frame_start_time: float = _race_time
+	var remaining_dt: float = dt_seconds
+	while remaining_dt > 0.0000001:
+		var chunk_dt: float = minf(remaining_dt, _INTERNAL_INTEGRATION_STEP)
+		var chunk_start_time: float = _race_time
+		for car in _cars:
+			_step_car_chunk(car, chunk_start_time, chunk_dt)
 
-	for car in _cars:
-		_step_car(car, frame_start_time, dt_seconds)
-
-	_race_time += dt_seconds
+		_race_time += chunk_dt
+		remaining_dt -= chunk_dt
 
 
 func get_snapshot() -> RaceTypes.RaceSnapshot:
@@ -96,12 +114,21 @@ func _validate_inputs(config: RaceTypes.RaceConfig, runtime: RaceTypes.RaceRunti
 			_validation_errors.append("Car id '%s' is duplicated." % clean_id)
 		else:
 			seen_ids[clean_id] = true
-		if car.speed_units_per_sec <= 0.0:
-			_validation_errors.append("Car '%s' speed_units_per_sec must be greater than zero." % clean_id)
+		if car.base_speed_units_per_sec <= 0.0:
+			_validation_errors.append("Car '%s' base_speed_units_per_sec must be greater than zero." % clean_id)
+
+	if config.track == null:
+		_validation_errors.append("Track pace profile config is required.")
+		return
+	if config.track.pace_segments.is_empty():
+		_validation_errors.append("Track pace profile requires at least one segment.")
 
 
-func _step_car(car: RaceTypes.CarState, frame_start_time: float, dt_seconds: float) -> void:
-	var speed: float = car.speed_units_per_sec
+func _step_car_chunk(car: RaceTypes.CarState, chunk_start_time: float, chunk_dt: float) -> void:
+	var pace_multiplier: float = _pace_profile.sample_multiplier(car.distance_along_track)
+	var speed: float = car.base_speed_units_per_sec * pace_multiplier
+	car.current_multiplier = pace_multiplier
+	car.effective_speed_units_per_sec = speed
 	if speed <= 0.0:
 		return
 
@@ -110,7 +137,7 @@ func _step_car(car: RaceTypes.CarState, frame_start_time: float, dt_seconds: flo
 		return
 
 	var previous_distance: float = car.distance_along_track
-	var raw_distance: float = previous_distance + speed * dt_seconds
+	var raw_distance: float = previous_distance + speed * chunk_dt
 	var laps_crossed: int = int(floor(raw_distance / track_length))
 	car.distance_along_track = fposmod(raw_distance, track_length)
 
@@ -124,7 +151,7 @@ func _step_car(car: RaceTypes.CarState, frame_start_time: float, dt_seconds: flo
 
 	var time_to_first_cross: float = (track_length - previous_distance) / speed
 	var clamped_time_to_first_cross: float = time_to_first_cross if time_to_first_cross > 0.0 else 0.0
-	var first_cross_time: float = frame_start_time + clamped_time_to_first_cross
+	var first_cross_time: float = chunk_start_time + clamped_time_to_first_cross
 	var lap_duration: float = track_length / speed
 
 	for crossing_index in range(laps_crossed):
@@ -142,6 +169,6 @@ func _register_lap_crossing(car: RaceTypes.CarState, crossing_time: float) -> vo
 	var raw_lap_time: float = crossing_time - car.lap_start_time
 	var lap_time: float = raw_lap_time if raw_lap_time > 0.0 else 0.0
 	car.last_lap_time = lap_time
-	car.best_lap_time = min(car.best_lap_time, lap_time)
+	car.best_lap_time = minf(car.best_lap_time, lap_time)
 	car.lap_start_time = crossing_time
 	car.lap_count += 1

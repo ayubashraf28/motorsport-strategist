@@ -14,7 +14,7 @@ func configure(curve: Curve2D, bake_interval: float = 8.0) -> void:
 	if curve == null:
 		return
 
-	curve.bake_interval = max(0.1, bake_interval)
+	curve.bake_interval = maxf(0.1, bake_interval)
 	var baked_points := curve.get_baked_points()
 	if baked_points.size() < 2:
 		return
@@ -64,3 +64,15 @@ func sample_position(distance_along_track: float) -> Vector2:
 
 	return _polyline[_polyline.size() - 1]
 
+
+func sample_tangent(distance_along_track: float) -> Vector2:
+	if not is_valid():
+		return Vector2.RIGHT
+
+	var probe_distance: float = minf(2.0, _track_length * 0.002)
+	var previous_point: Vector2 = sample_position(distance_along_track - probe_distance)
+	var next_point: Vector2 = sample_position(distance_along_track + probe_distance)
+	var tangent: Vector2 = next_point - previous_point
+	if tangent.length_squared() <= 0.000001:
+		return Vector2.RIGHT
+	return tangent.normalized()

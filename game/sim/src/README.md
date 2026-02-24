@@ -11,3 +11,4 @@ Current modules:
 - `race_types.gd`: typed config/state/snapshot models
 - `race_simulator.gd`: race clock, distance update, and lap timing rules
 - `fixed_step_runner.gd`: deterministic accumulator helper used by presentation
+- `pace_profile.gd`: deterministic track pace profile validation and smooth sampling

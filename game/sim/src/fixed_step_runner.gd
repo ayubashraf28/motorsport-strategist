@@ -7,8 +7,8 @@ var _accumulator: float = 0.0
 
 
 func _init(p_fixed_dt: float = 1.0 / 120.0, p_max_steps_per_frame: int = 16) -> void:
-	fixed_dt = max(p_fixed_dt, 0.000001)
-	max_steps_per_frame = max(p_max_steps_per_frame, 1)
+	fixed_dt = maxf(p_fixed_dt, 0.000001)
+	max_steps_per_frame = maxi(p_max_steps_per_frame, 1)
 
 
 func reset() -> void:
@@ -40,4 +40,3 @@ func advance(frame_delta: float, time_scale: float, step_callback: Callable) -> 
 
 func get_accumulator() -> float:
 	return _accumulator
-

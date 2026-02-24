@@ -70,8 +70,9 @@ func render(snapshot: RaceTypes.RaceSnapshot, is_paused: bool, time_scale: float
 		if row.is_empty():
 			continue
 		row["id"].text = car.id
+		row["speed"].text = _format_speed(car.effective_speed_units_per_sec)
 		row["lap_count"].text = str(car.lap_count)
-		row["current_lap"].text = _format_time(max(snapshot.race_time - car.lap_start_time, 0.0))
+		row["current_lap"].text = _format_time(maxf(snapshot.race_time - car.lap_start_time, 0.0))
 		row["last_lap"].text = _format_optional_time(car.last_lap_time)
 		row["best_lap"].text = _format_optional_time(car.best_lap_time)
 
@@ -111,12 +112,14 @@ func _sync_rows(cars: Array) -> void:
 
 func _create_row() -> Dictionary:
 	var id_label := _create_grid_label()
+	var speed_label := _create_grid_label()
 	var lap_count_label := _create_grid_label()
 	var current_lap_label := _create_grid_label()
 	var last_lap_label := _create_grid_label()
 	var best_lap_label := _create_grid_label()
 
 	_body_grid.add_child(id_label)
+	_body_grid.add_child(speed_label)
 	_body_grid.add_child(lap_count_label)
 	_body_grid.add_child(current_lap_label)
 	_body_grid.add_child(last_lap_label)
@@ -124,11 +127,12 @@ func _create_row() -> Dictionary:
 
 	return {
 		"id": id_label,
+		"speed": speed_label,
 		"lap_count": lap_count_label,
 		"current_lap": current_lap_label,
 		"last_lap": last_lap_label,
 		"best_lap": best_lap_label,
-		"cells": [id_label, lap_count_label, current_lap_label, last_lap_label, best_lap_label]
+		"cells": [id_label, speed_label, lap_count_label, current_lap_label, last_lap_label, best_lap_label]
 	}
 
 
@@ -147,3 +151,7 @@ func _format_optional_time(value_seconds: float) -> String:
 	if value_seconds < 0.0 or is_inf(value_seconds):
 		return "--"
 	return "%.3f s" % value_seconds
+
+
+func _format_speed(speed_units_per_sec: float) -> String:
+	return "%.1f u/s" % speed_units_per_sec

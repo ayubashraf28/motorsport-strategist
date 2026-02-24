@@ -1,0 +1,80 @@
+{
+  "count_first_lap_from_start": true,
+  "seed": 0,
+  "default_time_scale": 1.0,
+  "track": {
+    "blend_distance": 80.0,
+    "pace_segments": [
+      {
+        "start_distance": 0.0,
+        "end_distance": 414.19919,
+        "multiplier": 1.0
+      },
+      {
+        "start_distance": 414.19919,
+        "end_distance": 539.4222,
+        "multiplier": 0.68
+      },
+      {
+        "start_distance": 539.4222,
+        "end_distance": 828.39838,
+        "multiplier": 0.93
+      },
+      {
+        "start_distance": 828.39838,
+        "end_distance": 943.98885,
+        "multiplier": 0.72
+      },
+      {
+        "start_distance": 943.98885,
+        "end_distance": 1175.1698,
+        "multiplier": 0.82
+      },
+      {
+        "start_distance": 1175.1698,
+        "end_distance": 1454.51344,
+        "multiplier": 0.98
+      },
+      {
+        "start_distance": 1454.51344,
+        "end_distance": 1656.79676,
+        "multiplier": 0.76
+      },
+      {
+        "start_distance": 1656.79676,
+        "end_distance": 1839.81501,
+        "multiplier": 0.98
+      },
+      {
+        "start_distance": 1839.81501,
+        "end_distance": 2031.67673,
+        "multiplier": 0.84
+      }
+    ]
+  },
+  "cars": [
+    {
+      "id": "car_01",
+      "display_name": "Car 01",
+      "base_speed_units_per_sec": 330.0
+    },
+    {
+      "id": "car_02",
+      "display_name": "Car 02",
+      "base_speed_units_per_sec": 300.0
+    },
+    {
+      "id": "car_03",
+      "display_name": "Car 03",
+      "base_speed_units_per_sec": 310.0
+    },
+    {
+      "id": "car_04",
+      "display_name": "Car 04",
+      "base_speed_units_per_sec": 320.0
+    }
+  ],
+  "debug": {
+    "show_pace_profile": true
+  }
+}

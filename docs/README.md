@@ -9,3 +9,5 @@ Documentation hub for architecture, decisions, and product quality standards.
 Recent additions:
 - v0 race prototype architecture document
 - ADR for Godot root and v0 simulation placement
+- v1 pace profile architecture document
+- ADR for pace profile smoothing and validation decisions

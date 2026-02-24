@@ -21,7 +21,7 @@ func _ready() -> void:
 func configure(id_value: String, color_value: Color, radius_value: float) -> void:
 	car_id = id_value
 	dot_color = color_value
-	radius = max(radius_value, 2.0)
+	radius = maxf(radius_value, 2.0)
 	_sync_label()
 	queue_redraw()
 
@@ -39,4 +39,3 @@ func _draw() -> void:
 func _sync_label() -> void:
 	if _id_label != null:
 		_id_label.text = car_id
-
