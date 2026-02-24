@@ -36,6 +36,45 @@ Repository working rules for all future implementation.
 - Keep scripts deterministic and CI-friendly.
 - Update docs when structure, architecture, or workflow changes.
 
+## Git, PR, and release playbook
+
+### Branching and commits
+
+- Never commit directly to `main`.
+- Create short-lived branches from `main` using:
+- `feat/...` for features
+- `fix/...` for bug fixes
+- `chore/...` for maintenance/workflow/docs
+- Use focused, atomic commits with clear messages.
+
+### Pull request flow
+
+- Push branch to `origin` and open a PR into `main`.
+- PR must include:
+- what changed
+- why it changed
+- validation steps/tests run
+- Keep PR checks passing before merge. Required check context is `guardrails`.
+- Do not merge if checks are red or missing.
+
+### Protected branch rules
+
+- `main` is protected and PR-only.
+- Do not bypass branch protection except explicitly approved emergency cases.
+- Keep branch protection aligned with actual check names to avoid merge deadlocks.
+
+### Merge policy
+
+- Prefer squash merges for a clean history.
+- Keep commit history readable and release-friendly.
+
+### Release and environment flow
+
+- Dev delivery: artifacts from `main` pushes.
+- UAT delivery: tag `rc-vX.Y.Z-N` (example: `rc-v0.1.0-1`).
+- Production delivery: tag `vX.Y.Z` (example: `v0.1.0`).
+- Never create ad-hoc release tags outside these conventions.
+
 ## Baseline repository layout
 
 - `sim/`: deterministic simulation domain logic and tests
