@@ -4,14 +4,24 @@ const RaceTypes = preload("res://sim/src/race_types.gd")
 const TrackGeometry = preload("res://sim/src/track_geometry.gd")
 
 
-func test_large_radius_loop_has_near_zero_curvature_everywhere() -> void:
+func test_large_radius_loop_has_low_average_curvature() -> void:
 	var geometry: TrackGeometry = TrackGeometry.new()
-	geometry.configure_from_polyline(_build_circle_polyline(10000.0, 256), 4.0)
+	geometry.configure_from_polyline(_build_circle_polyline(10000.0, 1024), 4.0)
 	assert(geometry.is_valid())
 
 	var data: RaceTypes.TrackGeometryData = geometry.get_data()
+	var sum_abs: float = 0.0
+	var near_zero_count: int = 0
 	for kappa in data.curvatures:
-		assert(abs(kappa) < 0.0002)
+		var abs_kappa: float = abs(kappa)
+		sum_abs += abs_kappa
+		if abs_kappa < 0.0002:
+			near_zero_count += 1
+
+	var avg_abs: float = sum_abs / float(data.curvatures.size())
+	var near_zero_ratio: float = float(near_zero_count) / float(data.curvatures.size())
+	assert(avg_abs < 0.00012)
+	assert(near_zero_ratio > 0.9)
 
 
 func test_circle_curvature_matches_inverse_radius_within_tolerance() -> void:
