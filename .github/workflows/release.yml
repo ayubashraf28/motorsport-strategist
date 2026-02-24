@@ -34,7 +34,7 @@ jobs:
           git archive --format=zip --output "artifacts/${{ steps.meta.outputs.package_name }}" HEAD
 
       - name: Upload release artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ steps.meta.outputs.package_name }}
           path: artifacts/
