@@ -5,12 +5,35 @@ Shared runtime configuration files.
 ## Runtime config routing
 
 `RaceConfigLoader` checks configs in this order:
-1. `config/race_v1.1.json`
-2. `config/race_v1.json`
+1. `config/race_v2.json`
+2. `config/race_v1.1.json`
+3. `config/race_v1.json`
 
 Schema routing:
+- `schema_version: "2.0"` => physics-derived speed profile mode + race end + degradation + overtaking.
 - `schema_version: "1.1"` => physics-derived speed profile mode.
 - missing `schema_version` or `"1.0"` => pace-segment mode.
+
+## V2 schema (`race_v2.json`)
+
+Extends V1.1 with:
+- `total_laps` (`int`, `>= 0`; `0` means unlimited race distance).
+- `degradation` (`object`, optional): global tyre-like pace degradation defaults.
+- `overtaking` (`object`, optional): proximity/threshold/cooldown interaction rules.
+- `cars[].degradation` (`object`, optional): per-car degradation override.
+
+`degradation` fields:
+- `warmup_laps` (`float`, `>= 0`)
+- `peak_multiplier` (`float`, `> 0` and `<= 2.0`)
+- `degradation_rate` (`float`, `>= 0`)
+- `min_multiplier` (`float`, `> 0` and `<= peak_multiplier`)
+
+`overtaking` fields:
+- `enabled` (`bool`)
+- `proximity_distance` (`float`, `>= 0`)
+- `overtake_speed_threshold` (`float`, `>= 0`)
+- `held_up_speed_buffer` (`float`, `>= 0`)
+- `cooldown_seconds` (`float`, `>= 0`)
 
 ## V1.1 schema (`race_v1.1.json`)
 
@@ -49,4 +72,5 @@ Required fields:
 Runtime notes:
 - V1 validates segment coverage against baked track length.
 - V1.1 derives track length and curvature from the loaded geometry asset.
+- V2 uses the same geometry/physics track parsing as V1.1 and adds race-state/interaction behavior.
 - Invalid config blocks simulation startup and the HUD shows explicit errors.

@@ -117,7 +117,7 @@ func _load_config() -> bool:
 		_hud.set_error("Race config could not be parsed.")
 		return false
 	if _active_config.cars.is_empty():
-		_hud.set_empty("No cars configured. Add cars in config/race_v1.1.json or config/race_v1.json.")
+		_hud.set_empty("No cars configured. Add cars in config/race_v2.json, config/race_v1.1.json, or config/race_v1.json.")
 		return false
 	return true
 
@@ -228,6 +228,9 @@ func _apply_snapshot(snapshot: RaceTypes.RaceSnapshot) -> void:
 		if dot == null:
 			continue
 		dot.position = _track_sampler.sample_position(car.distance_along_track)
+
+	if snapshot.race_state == RaceTypes.RaceState.FINISHED and not _is_paused:
+		_set_paused(true)
 
 	_hud.render(snapshot, _is_paused, _time_scale)
 

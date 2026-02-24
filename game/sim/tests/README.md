@@ -5,6 +5,10 @@ Deterministic GdUnit4 tests for simulation and fixed-step behavior.
 Coverage priorities:
 - lap timing correctness
 - wrap-around crossing behavior under high dt
+- standings and interval correctness
+- race-state transitions and finish ordering
+- degradation model behavior and validation
+- overtaking/held-up/cooldown interaction behavior
 - reset/initial state invariants
 - validation failures for malformed configuration
 - reproducibility under identical fixed-step input sequences

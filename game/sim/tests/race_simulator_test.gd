@@ -182,9 +182,196 @@ func test_v1_1_null_geometry_is_rejected() -> void:
 	assert(not simulator.is_ready())
 
 
+func test_race_ends_after_total_laps() -> void:
+	var simulator := _build_simulator_with_total_laps([
+		_car("car_1", 50.0),
+		_car("car_2", 50.0)
+	], 100.0, 1)
+	assert(simulator.is_ready())
+
+	for _i in range(200):
+		simulator.step(0.05)
+		if simulator.get_snapshot().race_state == RaceTypes.RaceState.FINISHED:
+			break
+
+	var snapshot := simulator.get_snapshot()
+	assert(snapshot.race_state == RaceTypes.RaceState.FINISHED)
+	assert(snapshot.finish_order.size() == 2)
+
+
+func test_finished_car_speed_is_zero() -> void:
+	var simulator := _build_simulator_with_total_laps([_car("car_1", 50.0)], 100.0, 1)
+	assert(simulator.is_ready())
+
+	simulator.step(2.05)
+	var car: RaceTypes.CarState = simulator.get_snapshot().cars[0]
+	assert(car.is_finished)
+	assert(car.effective_speed_units_per_sec == 0.0)
+
+
+func test_step_is_noop_after_finished() -> void:
+	var simulator := _build_simulator_with_total_laps([_car("car_1", 50.0)], 100.0, 1)
+	assert(simulator.is_ready())
+
+	simulator.step(2.05)
+	var finished_snapshot: RaceTypes.RaceSnapshot = simulator.get_snapshot()
+	assert(finished_snapshot.race_state == RaceTypes.RaceState.FINISHED)
+
+	var time_before: float = finished_snapshot.race_time
+	simulator.step(5.0)
+	var time_after: float = simulator.get_snapshot().race_time
+	assert(abs(time_after - time_before) < 0.0000001)
+
+
+func test_two_phase_step_produces_same_results_when_overtaking_disabled() -> void:
+	var simulator_without_overtaking := _build_simulator_with_overtaking([
+		_car("car_1", 40.0),
+		_car("car_2", 35.0)
+	], 200.0, null)
+	var disabled_overtaking_config := RaceTypes.OvertakingConfig.new()
+	disabled_overtaking_config.enabled = false
+	var simulator_with_disabled_overtaking := _build_simulator_with_overtaking([
+		_car("car_1", 40.0),
+		_car("car_2", 35.0)
+	], 200.0, disabled_overtaking_config)
+
+	assert(simulator_without_overtaking.is_ready())
+	assert(simulator_with_disabled_overtaking.is_ready())
+
+	for _i in range(40):
+		simulator_without_overtaking.step(0.05)
+		simulator_with_disabled_overtaking.step(0.05)
+
+	var snapshot_a: RaceTypes.RaceSnapshot = simulator_without_overtaking.get_snapshot()
+	var snapshot_b: RaceTypes.RaceSnapshot = simulator_with_disabled_overtaking.get_snapshot()
+	assert(abs(snapshot_a.cars[0].total_distance - snapshot_b.cars[0].total_distance) < 0.000001)
+	assert(abs(snapshot_a.cars[1].total_distance - snapshot_b.cars[1].total_distance) < 0.000001)
+	assert(snapshot_a.cars[0].lap_count == snapshot_b.cars[0].lap_count)
+	assert(snapshot_a.cars[1].lap_count == snapshot_b.cars[1].lap_count)
+
+
+func test_held_up_car_does_not_phase_through() -> void:
+	var overtaking := RaceTypes.OvertakingConfig.new()
+	overtaking.enabled = true
+	overtaking.proximity_distance = 10.0
+	overtaking.overtake_speed_threshold = 10.0
+	overtaking.held_up_speed_buffer = 0.0
+	overtaking.cooldown_seconds = 3.0
+
+	var simulator := _build_simulator_with_overtaking([
+		_car("ahead", 50.0),
+		_car("behind", 55.0)
+	], 200.0, overtaking)
+	assert(simulator.is_ready())
+
+	# Seed a close gap so the behind car is immediately in interaction range.
+	simulator._cars[0].distance_along_track = 40.0
+	simulator._cars[1].distance_along_track = 35.0
+	simulator._cars[0].total_distance = 40.0
+	simulator._cars[1].total_distance = 35.0
+
+	simulator.step(1.0)
+	var snapshot: RaceTypes.RaceSnapshot = simulator.get_snapshot()
+	var ahead: RaceTypes.CarState = snapshot.cars[0]
+	var behind: RaceTypes.CarState = snapshot.cars[1]
+	assert(behind.total_distance <= ahead.total_distance)
+	assert(behind.is_held_up)
+
+
+func test_per_car_config_overrides_global_degradation() -> void:
+	var global_degradation := RaceTypes.DegradationConfig.new()
+	global_degradation.warmup_laps = 0.0
+	global_degradation.peak_multiplier = 1.0
+	global_degradation.degradation_rate = 0.20
+	global_degradation.min_multiplier = 0.50
+
+	var car_override := RaceTypes.DegradationConfig.new()
+	car_override.warmup_laps = 0.0
+	car_override.peak_multiplier = 1.0
+	car_override.degradation_rate = 0.0
+	car_override.min_multiplier = 0.80
+
+	var car_1 := _car("car_1", 40.0)
+	car_1.degradation = car_override
+	var car_2 := _car("car_2", 40.0)
+
+	var simulator := _build_simulator_with_degradation([car_1, car_2], 100.0, global_degradation)
+	assert(simulator.is_ready())
+	simulator.step(6.0)
+
+	var snapshot: RaceTypes.RaceSnapshot = simulator.get_snapshot()
+	assert(snapshot.cars[0].degradation_multiplier > snapshot.cars[1].degradation_multiplier)
+
+
 func _build_simulator(car_configs: Array, track_length: float) -> RaceSimulator:
 	var config := RaceTypes.RaceConfig.new()
 	config.track = _constant_track_profile(track_length)
+	for car_config in car_configs:
+		config.cars.append(car_config)
+	config.count_first_lap_from_start = true
+	config.seed = 0
+	config.default_time_scale = 1.0
+
+	var runtime := RaceTypes.RaceRuntimeParams.new()
+	runtime.track_length = track_length
+
+	var simulator := RaceSimulator.new()
+	simulator.initialize(config, runtime)
+	return simulator
+
+
+func _build_simulator_with_total_laps(
+	car_configs: Array,
+	track_length: float,
+	total_laps: int
+) -> RaceSimulator:
+	var config := RaceTypes.RaceConfig.new()
+	config.track = _constant_track_profile(track_length)
+	config.total_laps = total_laps
+	for car_config in car_configs:
+		config.cars.append(car_config)
+	config.count_first_lap_from_start = true
+	config.seed = 0
+	config.default_time_scale = 1.0
+
+	var runtime := RaceTypes.RaceRuntimeParams.new()
+	runtime.track_length = track_length
+
+	var simulator := RaceSimulator.new()
+	simulator.initialize(config, runtime)
+	return simulator
+
+
+func _build_simulator_with_overtaking(
+	car_configs: Array,
+	track_length: float,
+	overtaking_config: RaceTypes.OvertakingConfig
+) -> RaceSimulator:
+	var config := RaceTypes.RaceConfig.new()
+	config.track = _constant_track_profile(track_length)
+	config.overtaking = overtaking_config.clone() if overtaking_config != null else null
+	for car_config in car_configs:
+		config.cars.append(car_config)
+	config.count_first_lap_from_start = true
+	config.seed = 0
+	config.default_time_scale = 1.0
+
+	var runtime := RaceTypes.RaceRuntimeParams.new()
+	runtime.track_length = track_length
+
+	var simulator := RaceSimulator.new()
+	simulator.initialize(config, runtime)
+	return simulator
+
+
+func _build_simulator_with_degradation(
+	car_configs: Array,
+	track_length: float,
+	degradation_config: RaceTypes.DegradationConfig
+) -> RaceSimulator:
+	var config := RaceTypes.RaceConfig.new()
+	config.track = _constant_track_profile(track_length)
+	config.degradation = degradation_config.clone() if degradation_config != null else null
 	for car_config in car_configs:
 		config.cars.append(car_config)
 	config.count_first_lap_from_start = true
