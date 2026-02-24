@@ -32,6 +32,12 @@ temp/
 .cache/
 coverage/
 
+# Godot
+game/.godot/
+game/.import/
+game/addons/gdUnit4/
+game/reports/
+
 # Python
 __pycache__/
 *.pyc

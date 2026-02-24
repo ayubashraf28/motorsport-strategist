@@ -1,5 +1,7 @@
 # sim
 
-Deterministic simulation layer (strategy logic, race state, telemetry transforms).
+Repository-level simulation domain boundary and long-term ownership area.
 
-Tests should primarily live here to keep CI fast and reproducible.
+Current status:
+- v0 runtime simulation is implemented in `game/sim/` so Godot can execute tests and scripts with `game/` as project root.
+- this folder remains the canonical architecture boundary for future extraction and shared non-engine simulation packages.

@@ -2,4 +2,7 @@
 
 Game scene definitions and scene composition.
 
-Keep scene logic thin; delegate deterministic strategy behavior to `sim/`.
+Current entrypoint:
+- `main.tscn`: single-screen prototype (track + cars + HUD + start/finish marker + pace/curvature/speed debug overlays)
+
+Keep scene logic thin; delegate deterministic timing rules to `game/sim/src`.

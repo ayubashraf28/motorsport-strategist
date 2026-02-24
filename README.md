@@ -1,25 +1,57 @@
 # motorsport-strategist
 
-Production-ready repository bootstrap for a `main` + environments workflow.
+Racing Manager prototype repository with deterministic simulation and Godot presentation.
 
-## Branching and release model
+## Current gameplay baseline
 
-- `main`: always releasable, protected branch
-- Feature branches: `feat/*`, `fix/*`, `chore/*`
-- UAT candidates: tags `rc-vX.Y.Z-N` from `main`
-- Production releases: tags `vX.Y.Z` from `main`
+V1.1 is now supported with two runtime modes:
+- V1 pace profile mode (`config/race_v1.json`): hand-authored pace segments.
+- V1.1 physics profile mode (`config/race_v1.1.json`): speed derived from track curvature and vehicle limits.
 
-## Environments
+Main project entry:
+- Godot project: `game/project.godot`
+- Main scene: `game/scenes/main.tscn`
 
-- `dev`: build artifacts for internal testing on every merge to `main`
-- `uat`: release candidate artifacts from `rc-vX.Y.Z-N` tags
-- `prod`: stable release artifacts from `v*` tags
+## Run locally
 
-## Repository layout
+1. Install Godot 4.6.x.
+2. Open `game/project.godot`.
+3. Run `res://scenes/main.tscn`.
 
-- `sim/`: deterministic simulation logic and tests
-- `game/`: Godot project and assets
-- `tools/`: CI helpers and local automation scripts
-- `docs/`: architecture notes, ADRs, and UI/UX standards
-- `config/`: shared configuration templates and environment examples
-- `AGENTS.md`: repository working rules for future implementation
+Controls:
+- `Space`: pause/resume
+- `R`: reset
+- `1`, `2`, `4`: simulation speed
+- `D`: debug overlay cycle
+  - V1.1: speed -> curvature -> off
+  - V1: pace profile -> off
+
+## Track data pipeline (V1.1)
+
+Derived Monza geometry asset:
+- `data/tracks/monza/monza_centerline.json`
+
+Regenerate from raw CSV:
+```bash
+python tools/scripts/import_track.py \
+  --input-csv data/tracks/monza/Monza_raw.csv \
+  --output-json data/tracks/monza/monza_centerline.json \
+  --sample-interval 4.0 \
+  --scale 0.35
+```
+
+Only the derived JSON is committed. Raw CSV is git-ignored.
+
+## Tests
+
+Simulation tests live in `game/sim/tests`.
+
+CI (`PR Checks / guardrails`) runs:
+- lint checks
+- baseline unit tests
+- headless GdUnit suites in `res://sim/tests`
+
+Local GdUnit run:
+1. Install GdUnit4 in `game/addons/gdUnit4`.
+2. Temporarily remove `game/sim/tests/.gdignore`.
+3. Run suites from the GdUnit panel in Godot.

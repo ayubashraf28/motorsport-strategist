@@ -1,0 +1,27 @@
+{
+  "count_first_lap_from_start": true,
+  "seed": 0,
+  "default_time_scale": 1.0,
+  "cars": [
+    {
+      "id": "car_01",
+      "display_name": "Car 01",
+      "speed_units_per_sec": 330.0
+    },
+    {
+      "id": "car_02",
+      "display_name": "Car 02",
+      "speed_units_per_sec": 300.0
+    },
+    {
+      "id": "car_03",
+      "display_name": "Car 03",
+      "speed_units_per_sec": 310.0
+    },
+    {
+      "id": "car_04",
+      "display_name": "Car 04",
+      "speed_units_per_sec": 320.0
+    }
+  ]
+}

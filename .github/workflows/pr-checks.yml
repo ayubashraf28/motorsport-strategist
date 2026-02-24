@@ -24,5 +24,17 @@ jobs:
       - name: Unit tests
         run: bash tools/ci/test.sh
 
+      - name: Unignore Godot test scripts for CI
+        run: rm -f game/sim/tests/.gdignore
+
+      - name: Godot simulation tests (GdUnit4)
+        uses: godot-gdunit-labs/gdUnit4-action@v1.2.2
+        with:
+          godot-version: "4.6.1"
+          version: "v6.1.1"
+          project_dir: "./game"
+          paths: "res://sim/tests"
+          publish-report: false
+
       - name: Build sanity
         run: bash tools/ci/build_sanity.sh
