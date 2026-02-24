@@ -10,7 +10,7 @@
 ## Release flow
 
 1. Merge approved pull requests into `main`.
-2. Create `rc-*` tags on `main` for UAT candidates.
+2. Create `rc-vX.Y.Z-N` tags on `main` for UAT candidates.
 3. Create `vX.Y.Z` tags on `main` for production releases.
 
 ## Commit style

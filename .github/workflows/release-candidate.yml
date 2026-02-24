@@ -3,7 +3,7 @@ name: Release Candidate
 on:
   push:
     tags:
-      - "rc-*"
+      - "rc-v*"
 
 permissions:
   contents: write
@@ -16,17 +16,40 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Validate RC tag format
+        run: |
+          if [[ ! "${GITHUB_REF_NAME}" =~ ^rc-v[0-9]+\.[0-9]+\.[0-9]+-[0-9]+$ ]]; then
+            echo "Invalid RC tag '${GITHUB_REF_NAME}'. Expected: rc-vX.Y.Z-N"
+            exit 1
+          fi
+
+      - name: Build metadata
+        id: meta
+        run: |
+          SHORT_SHA="${GITHUB_SHA::7}"
+          PACKAGE_NAME="win64-${GITHUB_REF_NAME}-${SHORT_SHA}.zip"
+          echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
+          echo "package_name=$PACKAGE_NAME" >> "$GITHUB_OUTPUT"
+
       - name: Package candidate
         run: |
           mkdir -p artifacts
           echo "tag=${GITHUB_REF_NAME}" > artifacts/rc-metadata.txt
           echo "commit_sha=${GITHUB_SHA}" >> artifacts/rc-metadata.txt
+          echo "short_sha=${{ steps.meta.outputs.short_sha }}" >> artifacts/rc-metadata.txt
           echo "created_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> artifacts/rc-metadata.txt
-          git archive --format=zip --output artifacts/rc-${GITHUB_REF_NAME}.zip HEAD
+          git archive --format=zip --output "artifacts/${{ steps.meta.outputs.package_name }}" HEAD
+
+      - name: Upload UAT artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.meta.outputs.package_name }}
+          path: artifacts/
+          retention-days: 30
 
       - name: Create prerelease
         uses: softprops/action-gh-release@v2
         with:
           prerelease: true
           name: ${{ github.ref_name }}
-          files: artifacts/rc-${{ github.ref_name }}.zip
+          files: artifacts/${{ steps.meta.outputs.package_name }}
