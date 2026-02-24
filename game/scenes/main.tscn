@@ -1,0 +1,33 @@
+[gd_scene format=3 uid="uid://ca2tnagbkktct"]
+
+[ext_resource type="Script" uid="uid://dcldvy0hnwpnl" path="res://scripts/race_controller.gd" id="1_q067t"]
+[ext_resource type="PackedScene" path="res://ui/race_hud.tscn" id="2_3t5mq"]
+
+[node name="Main" type="Node2D" unique_id=247713884]
+script = ExtResource("1_q067t")
+
+[node name="TrackPath" type="Path2D" parent="." unique_id=1866536101]
+unique_name_in_owner = true
+position = Vector2(800, 450)
+
+[node name="TrackLine" type="Line2D" parent="." unique_id=760312601]
+unique_name_in_owner = true
+z_index = -1
+width = 20.0
+default_color = Color(0.17, 0.19, 0.21, 1)
+joint_mode = 1
+begin_cap_mode = 2
+end_cap_mode = 2
+
+[node name="CarsLayer" type="Node2D" parent="." unique_id=246551871]
+unique_name_in_owner = true
+position = Vector2(800, 450)
+
+[node name="HudLayer" type="CanvasLayer" parent="." unique_id=525964390]
+
+[node name="RaceHud" parent="HudLayer" unique_id=1854660543 instance=ExtResource("2_3t5mq")]
+unique_name_in_owner = true
+offset_left = -3.0
+offset_top = -4.0
+offset_right = -3.0
+offset_bottom = -4.0

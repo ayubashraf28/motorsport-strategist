@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [[ -f "game/project.godot" ]]; then
+  echo "[test] Godot simulation tests are executed in CI via gdUnit4-action"
+fi
+
 if [[ -f "sim/pyproject.toml" || -f "sim/requirements.txt" ]]; then
   echo "[test] python project detected in sim/"
   python -m pytest sim/tests
@@ -14,4 +18,4 @@ if [[ -f "sim/package.json" ]]; then
   exit 0
 fi
 
-echo "[test] no sim test runner configured yet, skipping"
+echo "[test] no local sim test runner configured, skipping"

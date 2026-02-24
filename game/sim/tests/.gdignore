@@ -1,0 +1,2 @@
+# Keep simulation tests out of normal project/editor script loading.
+# CI removes this file temporarily before running headless GdUnit suites.

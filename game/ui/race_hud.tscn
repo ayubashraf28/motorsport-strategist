@@ -1,0 +1,109 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://ui/race_hud.gd" id="1_lw7fw"]
+
+[node name="RaceHud" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 1
+script = ExtResource("1_lw7fw")
+
+[node name="RootMargin" type="MarginContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 16.0
+offset_top = 16.0
+offset_right = -16.0
+offset_bottom = -16.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Panel" type="PanelContainer" parent="RootMargin"]
+layout_mode = 2
+size_flags_horizontal = 1
+size_flags_vertical = 1
+custom_minimum_size = Vector2(560, 260)
+
+[node name="MainColumn" type="VBoxContainer" parent="RootMargin/Panel"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="TitleLabel" type="Label" parent="RootMargin/Panel/MainColumn"]
+layout_mode = 2
+text = "Racing Manager Prototype v0"
+
+[node name="StateLabel" type="Label" parent="RootMargin/Panel/MainColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Initializing..."
+
+[node name="HeaderGrid" type="GridContainer" parent="RootMargin/Panel/MainColumn"]
+layout_mode = 2
+columns = 5
+
+[node name="HeaderCarId" type="Label" parent="RootMargin/Panel/MainColumn/HeaderGrid"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Car ID"
+
+[node name="HeaderLapCount" type="Label" parent="RootMargin/Panel/MainColumn/HeaderGrid"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Laps"
+
+[node name="HeaderCurrentLap" type="Label" parent="RootMargin/Panel/MainColumn/HeaderGrid"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Current Lap"
+
+[node name="HeaderLastLap" type="Label" parent="RootMargin/Panel/MainColumn/HeaderGrid"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Last Lap"
+
+[node name="HeaderBestLap" type="Label" parent="RootMargin/Panel/MainColumn/HeaderGrid"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Best Lap"
+
+[node name="BodyGrid" type="GridContainer" parent="RootMargin/Panel/MainColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+columns = 5
+
+[node name="ControlsRow" type="HBoxContainer" parent="RootMargin/Panel/MainColumn"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="PauseButton" type="Button" parent="RootMargin/Panel/MainColumn/ControlsRow"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Pause"
+
+[node name="ResetButton" type="Button" parent="RootMargin/Panel/MainColumn/ControlsRow"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Reset"
+
+[node name="Speed1Button" type="Button" parent="RootMargin/Panel/MainColumn/ControlsRow"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "1x"
+
+[node name="Speed2Button" type="Button" parent="RootMargin/Panel/MainColumn/ControlsRow"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "2x"
+
+[node name="Speed4Button" type="Button" parent="RootMargin/Panel/MainColumn/ControlsRow"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "4x"
+
