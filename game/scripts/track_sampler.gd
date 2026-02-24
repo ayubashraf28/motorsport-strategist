@@ -7,28 +7,29 @@ var _track_length: float = 0.0
 
 
 func configure(curve: Curve2D, bake_interval: float = 8.0) -> void:
-	_polyline = PackedVector2Array()
-	_cumulative_lengths = PackedFloat32Array()
-	_track_length = 0.0
-
 	if curve == null:
+		_reset()
 		return
 
 	curve.bake_interval = maxf(0.1, bake_interval)
 	var baked_points := curve.get_baked_points()
-	if baked_points.size() < 2:
+	configure_from_polyline(baked_points)
+
+
+func configure_from_polyline(polyline: PackedVector2Array) -> void:
+	_reset()
+	if polyline.size() < 2:
 		return
 
-	_polyline = baked_points
+	_polyline = polyline.duplicate()
 	if _polyline[0].distance_to(_polyline[_polyline.size() - 1]) > 0.001:
 		_polyline.append(_polyline[0])
 
 	_cumulative_lengths.append(0.0)
-	var running_total := 0.0
+	var running_total: float = 0.0
 	for i in range(1, _polyline.size()):
 		running_total += _polyline[i - 1].distance_to(_polyline[i])
 		_cumulative_lengths.append(running_total)
-
 	_track_length = running_total
 
 
@@ -76,3 +77,9 @@ func sample_tangent(distance_along_track: float) -> Vector2:
 	if tangent.length_squared() <= 0.000001:
 		return Vector2.RIGHT
 	return tangent.normalized()
+
+
+func _reset() -> void:
+	_polyline = PackedVector2Array()
+	_cumulative_lengths = PackedFloat32Array()
+	_track_length = 0.0

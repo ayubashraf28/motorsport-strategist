@@ -1,0 +1,43 @@
+{
+  "schema_version": "1.1",
+  "count_first_lap_from_start": true,
+  "seed": 0,
+  "default_time_scale": 1.0,
+  "track": {
+    "geometry_asset": "../data/tracks/monza/monza_centerline.json",
+    "physics": {
+      "a_lat_max": 25.0,
+      "a_long_accel": 8.0,
+      "a_long_brake": 20.0,
+      "v_top_speed": 83.0,
+      "curvature_epsilon": 0.0001
+    }
+  },
+  "cars": [
+    {
+      "id": "car_01",
+      "display_name": "Car 01",
+      "v_ref": 83.0
+    },
+    {
+      "id": "car_02",
+      "display_name": "Car 02",
+      "v_ref": 79.0
+    },
+    {
+      "id": "car_03",
+      "display_name": "Car 03",
+      "v_ref": 76.0
+    },
+    {
+      "id": "car_04",
+      "display_name": "Car 04",
+      "v_ref": 73.0
+    }
+  ],
+  "debug": {
+    "show_pace_profile": false,
+    "show_curvature_overlay": false,
+    "show_speed_overlay": true
+  }
+}

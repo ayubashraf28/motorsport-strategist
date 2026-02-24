@@ -9,6 +9,8 @@ Coverage priorities:
 - validation failures for malformed configuration
 - reproducibility under identical fixed-step input sequences
 - pace profile validation and smooth transition guarantees
+- geometry curvature computation validity
+- physics speed-profile correctness and determinism
 
 Local invocation:
 1. Open `game/project.godot` in Godot 4.6.x.

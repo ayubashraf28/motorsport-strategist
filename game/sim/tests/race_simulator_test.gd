@@ -133,6 +133,44 @@ func test_validation_rejects_zero_or_negative_values() -> void:
 	assert(not invalid_track_profile_sim.is_ready())
 
 
+func test_v1_1_straight_track_uses_v_ref_scaled_speed() -> void:
+	var simulator := _build_simulator_v1_1([_car_v1_1("car_1", 83.0)], _straight_geometry(300.0, 4.0), 83.0)
+	assert(simulator.is_ready())
+
+	simulator.step(1.0)
+	var car: RaceTypes.CarState = simulator.get_snapshot().cars[0]
+	assert(abs(car.effective_speed_units_per_sec - 83.0) < 0.0001)
+
+
+func test_v1_1_reset_restores_initial_state() -> void:
+	var simulator := _build_simulator_v1_1([_car_v1_1("car_1", 83.0)], _straight_geometry(300.0, 4.0), 83.0)
+	assert(simulator.is_ready())
+
+	simulator.step(2.0)
+	simulator.reset()
+	var car: RaceTypes.CarState = simulator.get_snapshot().cars[0]
+	assert(car.lap_count == 0)
+	assert(car.distance_along_track == 0.0)
+	assert(car.last_lap_time == -1.0)
+	assert(is_inf(car.best_lap_time))
+	assert(simulator.get_snapshot().race_time == 0.0)
+
+
+func test_v1_1_null_geometry_is_rejected() -> void:
+	var config := RaceTypes.RaceConfig.new()
+	config.schema_version = "1.1"
+	config.track = _speed_track_config(83.0)
+	config.cars.append(_car_v1_1("car_1", 83.0))
+
+	var runtime := RaceTypes.RaceRuntimeParams.new()
+	runtime.track_length = 300.0
+	runtime.geometry = null
+
+	var simulator := RaceSimulator.new()
+	simulator.initialize(config, runtime)
+	assert(not simulator.is_ready())
+
+
 func _build_simulator(car_configs: Array, track_length: float) -> RaceSimulator:
 	var config := RaceTypes.RaceConfig.new()
 	config.track = _constant_track_profile(track_length)
@@ -150,11 +188,44 @@ func _build_simulator(car_configs: Array, track_length: float) -> RaceSimulator:
 	return simulator
 
 
+func _build_simulator_v1_1(
+	car_configs: Array,
+	geometry: RaceTypes.TrackGeometryData,
+	v_top_speed: float
+) -> RaceSimulator:
+	var config := RaceTypes.RaceConfig.new()
+	config.schema_version = "1.1"
+	config.track = _speed_track_config(v_top_speed)
+	for car_config in car_configs:
+		config.cars.append(car_config)
+	config.count_first_lap_from_start = true
+	config.seed = 0
+	config.default_time_scale = 1.0
+
+	var runtime := RaceTypes.RaceRuntimeParams.new()
+	runtime.track_length = geometry.track_length
+	runtime.geometry = geometry
+
+	var simulator := RaceSimulator.new()
+	simulator.initialize(config, runtime)
+	return simulator
+
+
 func _car(id_value: String, speed_value: float) -> RaceTypes.CarConfig:
 	var car := RaceTypes.CarConfig.new()
 	car.id = id_value
 	car.display_name = id_value
 	car.base_speed_units_per_sec = speed_value
+	car.v_ref = speed_value
+	return car
+
+
+func _car_v1_1(id_value: String, v_ref_value: float) -> RaceTypes.CarConfig:
+	var car := RaceTypes.CarConfig.new()
+	car.id = id_value
+	car.display_name = id_value
+	car.v_ref = v_ref_value
+	car.base_speed_units_per_sec = v_ref_value
 	return car
 
 
@@ -167,3 +238,28 @@ func _constant_track_profile(track_length: float) -> RaceTypes.PaceProfileConfig
 	segment.multiplier = 1.0
 	profile.pace_segments.append(segment)
 	return profile
+
+
+func _speed_track_config(v_top_speed: float) -> RaceTypes.SpeedProfileConfig:
+	var speed_track := RaceTypes.SpeedProfileConfig.new()
+	speed_track.geometry_asset_path = "unused-in-tests"
+	speed_track.physics = RaceTypes.PhysicsVehicleConfig.new()
+	speed_track.physics.a_lat_max = 25.0
+	speed_track.physics.a_long_accel = 8.0
+	speed_track.physics.a_long_brake = 20.0
+	speed_track.physics.v_top_speed = v_top_speed
+	speed_track.physics.curvature_epsilon = 0.0001
+	return speed_track
+
+
+func _straight_geometry(track_length: float, ds: float) -> RaceTypes.TrackGeometryData:
+	var sample_count: int = int(round(track_length / ds))
+	var geometry := RaceTypes.TrackGeometryData.new()
+	geometry.sample_count = sample_count
+	geometry.ds = ds
+	geometry.track_length = float(sample_count) * ds
+	geometry.curvatures = PackedFloat64Array()
+	geometry.curvatures.resize(sample_count)
+	for i in range(sample_count):
+		geometry.curvatures[i] = 0.0
+	return geometry

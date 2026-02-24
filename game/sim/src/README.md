@@ -12,3 +12,5 @@ Current modules:
 - `race_simulator.gd`: race clock, distance update, and lap timing rules
 - `fixed_step_runner.gd`: deterministic accumulator helper used by presentation
 - `pace_profile.gd`: deterministic track pace profile validation and smooth sampling
+- `track_geometry.gd`: geometry validation/resampling and curvature computation helpers
+- `speed_profile.gd`: physics-derived speed profile generation and distance sampling

@@ -1,8 +1,10 @@
-[gd_scene load_steps=4 format=3 uid="uid://ca2tnagbkktct"]
+[gd_scene load_steps=6 format=3 uid="uid://ca2tnagbkktct"]
 
 [ext_resource type="Script" uid="uid://dcldvy0hnwpnl" path="res://scripts/race_controller.gd" id="1_q067t"]
 [ext_resource type="PackedScene" path="res://ui/race_hud.tscn" id="2_3t5mq"]
 [ext_resource type="Script" path="res://scripts/pace_debug_overlay.gd" id="3_5gy4u"]
+[ext_resource type="Script" path="res://scripts/curvature_debug_overlay.gd" id="4_v1r0x"]
+[ext_resource type="Script" path="res://scripts/speed_debug_overlay.gd" id="5_1x2g7"]
 
 [node name="Main" type="Node2D" unique_id=247713884]
 script = ExtResource("1_q067t")
@@ -23,6 +25,16 @@ end_cap_mode = 2
 [node name="PaceDebugOverlay" type="Node2D" parent="."]
 unique_name_in_owner = true
 script = ExtResource("3_5gy4u")
+
+[node name="CurvatureDebugOverlay" type="Node2D" parent="."]
+visible = false
+unique_name_in_owner = true
+script = ExtResource("4_v1r0x")
+
+[node name="SpeedDebugOverlay" type="Node2D" parent="."]
+visible = false
+unique_name_in_owner = true
+script = ExtResource("5_1x2g7")
 
 [node name="StartFinishMarker" type="Line2D" parent="."]
 unique_name_in_owner = true

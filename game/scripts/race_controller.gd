@@ -5,13 +5,21 @@ const RaceSimulator = preload("res://sim/src/race_simulator.gd")
 const FixedStepRunner = preload("res://sim/src/fixed_step_runner.gd")
 const RaceConfigLoader = preload("res://scripts/race_config_loader.gd")
 const TrackSampler = preload("res://scripts/track_sampler.gd")
+const TrackLoader = preload("res://scripts/track_loader.gd")
 const CarDot = preload("res://scripts/car_dot.gd")
 const PaceDebugOverlay = preload("res://scripts/pace_debug_overlay.gd")
+const CurvatureDebugOverlay = preload("res://scripts/curvature_debug_overlay.gd")
+const SpeedDebugOverlay = preload("res://scripts/speed_debug_overlay.gd")
 
 const FIXED_DT: float = 1.0 / 120.0
 const MAX_STEPS_PER_FRAME: int = 16
 const DOT_RADIUS: float = 7.0
 const TRACK_BAKE_INTERVAL: float = 8.0
+
+const DEBUG_MODE_OFF: int = 0
+const DEBUG_MODE_CURVATURE: int = 1
+const DEBUG_MODE_SPEED: int = 2
+const DEBUG_MODE_PACE: int = 3
 
 const CAR_COLORS := [
 	Color(0.92, 0.29, 0.16),
@@ -28,10 +36,12 @@ const CAR_COLORS := [
 @onready var _track_line: Line2D = %TrackLine
 @onready var _start_finish_marker: Line2D = %StartFinishMarker
 @onready var _pace_debug_overlay: PaceDebugOverlay = %PaceDebugOverlay
+@onready var _curvature_debug_overlay: CurvatureDebugOverlay = %CurvatureDebugOverlay
+@onready var _speed_debug_overlay: SpeedDebugOverlay = %SpeedDebugOverlay
 @onready var _cars_layer: Node2D = %CarsLayer
 @onready var _hud: RaceHud = %RaceHud
 
-var _simulator: RaceSimulator
+var _simulator: RaceSimulator = null
 var _track_sampler: TrackSampler = TrackSampler.new()
 var _step_runner: FixedStepRunner = FixedStepRunner.new(FIXED_DT, MAX_STEPS_PER_FRAME)
 var _car_nodes: Dictionary = {}
@@ -39,12 +49,17 @@ var _time_scale: float = 1.0
 var _is_paused: bool = false
 var _runtime_ready: bool = false
 var _last_spiral_warning_ms: int = 0
-var _show_pace_profile_debug: bool = true
+var _config_source_path: String = ""
+var _active_config: RaceTypes.RaceConfig = null
+var _runtime_geometry: RaceTypes.TrackGeometryData = null
+var _debug_mode: int = DEBUG_MODE_OFF
 
 
 func _ready() -> void:
 	_connect_ui_signals()
 
+	if not _load_config():
+		return
 	if not _initialize_track():
 		return
 	if not _initialize_simulator():
@@ -85,11 +100,36 @@ func _unhandled_input(event: InputEvent) -> void:
 				_set_time_scale(4.0)
 				get_viewport().set_input_as_handled()
 			KEY_D:
-				_toggle_pace_profile_debug()
+				_cycle_debug_overlay_mode()
 				get_viewport().set_input_as_handled()
 
 
+func _load_config() -> bool:
+	var load_result: Dictionary = RaceConfigLoader.load_race_config()
+	var load_errors: PackedStringArray = load_result.get("errors", PackedStringArray())
+	if not load_errors.is_empty():
+		_hud.set_error("\n".join(load_errors))
+		return false
+
+	_config_source_path = String(load_result.get("source_path", ""))
+	_active_config = load_result.get("config", null) as RaceTypes.RaceConfig
+	if _active_config == null:
+		_hud.set_error("Race config could not be parsed.")
+		return false
+	if _active_config.cars.is_empty():
+		_hud.set_empty("No cars configured. Add cars in config/race_v1.1.json or config/race_v1.json.")
+		return false
+	return true
+
+
 func _initialize_track() -> bool:
+	_runtime_geometry = null
+	if _active_config != null and _active_config.is_physics_profile():
+		return _initialize_track_from_geometry_asset()
+	return _initialize_track_from_curve()
+
+
+func _initialize_track_from_curve() -> bool:
 	var curve: Curve2D = _track_path.curve
 	if curve == null or curve.point_count < 3:
 		curve = _build_default_curve()
@@ -108,39 +148,55 @@ func _initialize_track() -> bool:
 	return true
 
 
-func _initialize_simulator() -> bool:
-	var load_result: Dictionary = RaceConfigLoader.load_race_config()
-	var load_errors_value: Variant = load_result.get("errors", PackedStringArray())
-	var load_errors: PackedStringArray = load_errors_value if load_errors_value is PackedStringArray else PackedStringArray()
+func _initialize_track_from_geometry_asset() -> bool:
+	var speed_track: RaceTypes.SpeedProfileConfig = _active_config.track as RaceTypes.SpeedProfileConfig
+	if speed_track == null:
+		_hud.set_error("Schema 1.1 requires speed profile track configuration.")
+		return false
+
+	var load_result: Dictionary = TrackLoader.load_track_geometry(
+		speed_track.geometry_asset_path,
+		_config_source_path
+	)
+	var load_errors: PackedStringArray = load_result.get("errors", PackedStringArray())
 	if not load_errors.is_empty():
 		_hud.set_error("\n".join(load_errors))
 		return false
 
-	var race_config_value: Variant = load_result.get("config", null)
-	var race_config: RaceTypes.RaceConfig = race_config_value as RaceTypes.RaceConfig
-	if race_config == null:
-		_hud.set_error("Race config could not be parsed.")
+	_runtime_geometry = load_result.get("geometry", null) as RaceTypes.TrackGeometryData
+	var polyline: PackedVector2Array = load_result.get("polyline", PackedVector2Array())
+	if _runtime_geometry == null or polyline.is_empty():
+		_hud.set_error("Track geometry asset parsed without usable data.")
 		return false
 
-	if race_config.cars.is_empty():
-		_hud.set_empty("No cars configured. Add cars in config/race_v1.json.")
+	_track_sampler.configure_from_polyline(polyline)
+	if not _track_sampler.is_valid():
+		_hud.set_error("Track geometry asset produced an invalid polyline.")
 		return false
 
+	_track_line.position = _track_path.position
+	_track_line.points = _track_sampler.get_polyline()
+	_track_line.closed = false
+	_cars_layer.position = _track_path.position
+	_update_start_finish_marker()
+	return true
+
+
+func _initialize_simulator() -> bool:
 	_simulator = RaceSimulator.new()
 	var runtime: RaceTypes.RaceRuntimeParams = RaceTypes.RaceRuntimeParams.new()
 	runtime.track_length = _track_sampler.get_total_length()
-	_simulator.initialize(race_config, runtime)
-
+	runtime.geometry = _runtime_geometry
+	_simulator.initialize(_active_config, runtime)
 	if not _simulator.is_ready():
 		_hud.set_error("\n".join(_simulator.get_validation_errors()))
 		return false
 
-	_time_scale = _sanitize_time_scale(race_config.default_time_scale)
-	_show_pace_profile_debug = race_config.debug.show_pace_profile if race_config.debug != null else true
+	_time_scale = _sanitize_time_scale(_active_config.default_time_scale)
 	_is_paused = false
 	_step_runner.reset()
-	_configure_pace_debug_overlay(race_config, runtime.track_length)
 	_build_car_nodes(_simulator.get_snapshot().cars)
+	_configure_debug_overlays(runtime.track_length)
 	return true
 
 
@@ -164,7 +220,10 @@ func _build_car_nodes(cars: Array) -> void:
 
 
 func _apply_snapshot(snapshot: RaceTypes.RaceSnapshot) -> void:
-	for car in snapshot.cars:
+	for raw_car in snapshot.cars:
+		var car: RaceTypes.CarState = raw_car as RaceTypes.CarState
+		if car == null:
+			continue
 		var dot: CarDot = _car_nodes.get(car.id) as CarDot
 		if dot == null:
 			continue
@@ -221,15 +280,11 @@ func _maybe_warn_spiral_of_death() -> void:
 	var now_ms: int = Time.get_ticks_msec()
 	if now_ms - _last_spiral_warning_ms < 1000:
 		return
-
 	_last_spiral_warning_ms = now_ms
 	push_warning("Fixed-step loop hit MAX_STEPS_PER_FRAME. Simulation is throttling.")
 
 
 func _update_start_finish_marker() -> void:
-	if _start_finish_marker == null:
-		return
-
 	_start_finish_marker.position = _track_path.position
 	var distance_at_line: float = 0.0
 	var line_center: Vector2 = _track_sampler.sample_position(distance_at_line)
@@ -242,15 +297,35 @@ func _update_start_finish_marker() -> void:
 	])
 
 
-func _configure_pace_debug_overlay(config: RaceTypes.RaceConfig, track_length: float) -> void:
-	if _pace_debug_overlay == null:
-		return
+func _configure_debug_overlays(track_length: float) -> void:
+	_pace_debug_overlay.visible = false
+	_curvature_debug_overlay.visible = false
+	_speed_debug_overlay.visible = false
 
+	var debug: RaceTypes.DebugConfig = _active_config.debug if _active_config.debug != null else RaceTypes.DebugConfig.new()
+	if _active_config.is_physics_profile():
+		_configure_curvature_overlay(track_length)
+		_configure_speed_overlay(track_length)
+		if debug.show_curvature_overlay:
+			_debug_mode = DEBUG_MODE_CURVATURE
+		elif debug.show_speed_overlay:
+			_debug_mode = DEBUG_MODE_SPEED
+		else:
+			_debug_mode = DEBUG_MODE_OFF
+	else:
+		_configure_pace_overlay(track_length)
+		_debug_mode = DEBUG_MODE_PACE if debug.show_pace_profile else DEBUG_MODE_OFF
+
+	_apply_debug_mode_visibility()
+
+
+func _configure_pace_overlay(track_length: float) -> void:
 	var blend_distance: float = 0.0
 	var segments: Array[RaceTypes.PaceSegmentConfig] = []
-	if config.track != null:
-		blend_distance = config.track.blend_distance
-		segments = config.track.pace_segments
+	if _active_config.track is RaceTypes.PaceProfileConfig:
+		var pace_track: RaceTypes.PaceProfileConfig = _active_config.track as RaceTypes.PaceProfileConfig
+		blend_distance = pace_track.blend_distance
+		segments = pace_track.pace_segments
 
 	_pace_debug_overlay.position = _track_path.position
 	_pace_debug_overlay.configure(
@@ -259,20 +334,54 @@ func _configure_pace_debug_overlay(config: RaceTypes.RaceConfig, track_length: f
 		blend_distance,
 		segments
 	)
-	_pace_debug_overlay.visible = _show_pace_profile_debug
 
 
-func _toggle_pace_profile_debug() -> void:
-	_show_pace_profile_debug = not _show_pace_profile_debug
-	if _pace_debug_overlay != null:
-		_pace_debug_overlay.visible = _show_pace_profile_debug
+func _configure_curvature_overlay(track_length: float) -> void:
+	if _runtime_geometry == null:
+		return
+	_curvature_debug_overlay.position = _track_path.position
+	_curvature_debug_overlay.configure(_track_sampler, track_length, _runtime_geometry.curvatures)
+
+
+func _configure_speed_overlay(track_length: float) -> void:
+	var profile_speeds: PackedFloat64Array = _simulator.get_speed_profile_array()
+	if profile_speeds.is_empty():
+		return
+	var physics_config: RaceTypes.PhysicsVehicleConfig = _simulator.get_physics_config()
+	if physics_config == null:
+		return
+	_speed_debug_overlay.position = _track_path.position
+	_speed_debug_overlay.configure(_track_sampler, track_length, profile_speeds, physics_config.v_top_speed)
+
+
+func _cycle_debug_overlay_mode() -> void:
+	if _active_config == null:
+		return
+
+	if _active_config.is_physics_profile():
+		match _debug_mode:
+			DEBUG_MODE_SPEED:
+				_debug_mode = DEBUG_MODE_CURVATURE
+			DEBUG_MODE_CURVATURE:
+				_debug_mode = DEBUG_MODE_OFF
+			_:
+				_debug_mode = DEBUG_MODE_SPEED
+	else:
+		_debug_mode = DEBUG_MODE_OFF if _debug_mode == DEBUG_MODE_PACE else DEBUG_MODE_PACE
+
+	_apply_debug_mode_visibility()
+
+
+func _apply_debug_mode_visibility() -> void:
+	_pace_debug_overlay.visible = _debug_mode == DEBUG_MODE_PACE
+	_curvature_debug_overlay.visible = _debug_mode == DEBUG_MODE_CURVATURE
+	_speed_debug_overlay.visible = _debug_mode == DEBUG_MODE_SPEED
 
 
 func _build_default_curve() -> Curve2D:
-	var curve := Curve2D.new()
+	var curve: Curve2D = Curve2D.new()
 	curve.bake_interval = TRACK_BAKE_INTERVAL
-	# Monza-inspired layout: long straights, two tight chicanes, medium-speed bends,
-	# and a long final corner feeding back onto the main straight.
+	# Monza-inspired fallback for schema 1.0 when no editor curve exists.
 	curve.add_point(Vector2(-312.48, -17.36), Vector2(-104.16, 52.08), Vector2(156.24, 0.0))
 	curve.add_point(Vector2(312.48, -21.7), Vector2(-190.96, 0.0), Vector2(60.76, 34.72))
 	curve.add_point(Vector2(355.88, 60.76), Vector2(-34.72, -26.04), Vector2(8.68, 52.08))

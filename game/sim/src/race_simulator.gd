@@ -3,6 +3,7 @@ class_name RaceSimulator
 
 const RaceTypes = preload("res://sim/src/race_types.gd")
 const PaceProfile = preload("res://sim/src/pace_profile.gd")
+const SpeedProfile = preload("res://sim/src/speed_profile.gd")
 
 const _INTERNAL_INTEGRATION_STEP: float = 1.0 / 120.0
 
@@ -10,7 +11,9 @@ var _config: RaceTypes.RaceConfig
 var _runtime: RaceTypes.RaceRuntimeParams
 var _cars: Array[RaceTypes.CarState] = []
 var _race_time: float = 0.0
-var _pace_profile: PaceProfile = PaceProfile.new()
+var _pace_profile: PaceProfile = null
+var _speed_profile: SpeedProfile = null
+var _physics_config: RaceTypes.PhysicsVehicleConfig = null
 var _is_ready: bool = false
 var _validation_errors: PackedStringArray = PackedStringArray()
 
@@ -19,6 +22,9 @@ func initialize(config: RaceTypes.RaceConfig, runtime: RaceTypes.RaceRuntimePara
 	_validation_errors = PackedStringArray()
 	_is_ready = false
 	_cars.clear()
+	_pace_profile = null
+	_speed_profile = null
+	_physics_config = null
 
 	_validate_inputs(config, runtime)
 	if not _validation_errors.is_empty():
@@ -26,23 +32,20 @@ func initialize(config: RaceTypes.RaceConfig, runtime: RaceTypes.RaceRuntimePara
 
 	_config = config.clone()
 	_runtime = runtime.clone()
-	_pace_profile = PaceProfile.new()
-	_pace_profile.configure(
-		_runtime.track_length,
-		_config.track.blend_distance,
-		_config.track.pace_segments
-	)
+	if _config.is_physics_profile():
+		_initialize_speed_profile()
+	else:
+		_initialize_pace_profile()
 
-	if not _pace_profile.is_valid():
-		for pace_error in _pace_profile.get_validation_errors():
-			_validation_errors.append(pace_error)
+	if not _validation_errors.is_empty():
 		return
 
 	for car_config in _config.cars:
-		var state := RaceTypes.CarState.new()
+		var state: RaceTypes.CarState = RaceTypes.CarState.new()
 		state.id = car_config.id
 		state.display_name = car_config.display_name
 		state.base_speed_units_per_sec = car_config.base_speed_units_per_sec
+		state.v_ref = car_config.v_ref if car_config.v_ref > 0.0 else car_config.base_speed_units_per_sec
 		state.reset_runtime_state()
 		_cars.append(state)
 
@@ -72,11 +75,21 @@ func step(dt_seconds: float) -> void:
 
 
 func get_snapshot() -> RaceTypes.RaceSnapshot:
-	var snapshot := RaceTypes.RaceSnapshot.new()
+	var snapshot: RaceTypes.RaceSnapshot = RaceTypes.RaceSnapshot.new()
 	snapshot.race_time = _race_time
 	for car in _cars:
 		snapshot.cars.append(car.clone())
 	return snapshot
+
+
+func get_speed_profile_array() -> PackedFloat64Array:
+	if _speed_profile == null:
+		return PackedFloat64Array()
+	return _speed_profile.get_speed_array()
+
+
+func get_physics_config() -> RaceTypes.PhysicsVehicleConfig:
+	return _physics_config.clone() if _physics_config != null else null
 
 
 func is_ready() -> bool:
@@ -96,9 +109,11 @@ func _validate_inputs(config: RaceTypes.RaceConfig, runtime: RaceTypes.RaceRunti
 		return
 	if runtime.track_length <= 0.0:
 		_validation_errors.append("Track length must be greater than zero.")
-
 	if config.cars.is_empty():
 		_validation_errors.append("At least one car must be configured.")
+		return
+	if config.track == null:
+		_validation_errors.append("Track configuration is required.")
 		return
 
 	var seen_ids: Dictionary = {}
@@ -114,20 +129,69 @@ func _validate_inputs(config: RaceTypes.RaceConfig, runtime: RaceTypes.RaceRunti
 			_validation_errors.append("Car id '%s' is duplicated." % clean_id)
 		else:
 			seen_ids[clean_id] = true
-		if car.base_speed_units_per_sec <= 0.0:
-			_validation_errors.append("Car '%s' base_speed_units_per_sec must be greater than zero." % clean_id)
 
-	if config.track == null:
-		_validation_errors.append("Track pace profile config is required.")
+		if config.is_physics_profile():
+			if car.v_ref <= 0.0:
+				_validation_errors.append("Car '%s' v_ref must be greater than zero." % clean_id)
+		else:
+			if car.base_speed_units_per_sec <= 0.0:
+				_validation_errors.append("Car '%s' base_speed_units_per_sec must be > 0." % clean_id)
+
+	if config.is_physics_profile() and runtime.geometry == null:
+		_validation_errors.append("Track geometry runtime data is required for schema 1.1.")
+
+
+func _initialize_pace_profile() -> void:
+	var track_config: RaceTypes.PaceProfileConfig = _config.track as RaceTypes.PaceProfileConfig
+	if track_config == null:
+		_validation_errors.append("Schema 1.0 requires PaceProfileConfig.")
 		return
-	if config.track.pace_segments.is_empty():
-		_validation_errors.append("Track pace profile requires at least one segment.")
+
+	_pace_profile = PaceProfile.new()
+	_pace_profile.configure(
+		_runtime.track_length,
+		track_config.blend_distance,
+		track_config.pace_segments
+	)
+	if not _pace_profile.is_valid():
+		for pace_error in _pace_profile.get_validation_errors():
+			_validation_errors.append(pace_error)
+
+
+func _initialize_speed_profile() -> void:
+	var track_config: RaceTypes.SpeedProfileConfig = _config.track as RaceTypes.SpeedProfileConfig
+	if track_config == null:
+		_validation_errors.append("Schema 1.1 requires SpeedProfileConfig.")
+		return
+
+	_physics_config = track_config.physics.clone() if track_config.physics != null else null
+	if _physics_config == null:
+		_validation_errors.append("SpeedProfileConfig.physics is required.")
+		return
+
+	_speed_profile = SpeedProfile.new()
+	_speed_profile.configure(_runtime.geometry, _physics_config)
+	if not _speed_profile.is_valid():
+		for speed_error in _speed_profile.get_validation_errors():
+			_validation_errors.append(speed_error)
 
 
 func _step_car_chunk(car: RaceTypes.CarState, chunk_start_time: float, chunk_dt: float) -> void:
-	var pace_multiplier: float = _pace_profile.sample_multiplier(car.distance_along_track)
-	var speed: float = car.base_speed_units_per_sec * pace_multiplier
-	car.current_multiplier = pace_multiplier
+	var speed: float = 0.0
+	if _speed_profile != null:
+		var raw_speed: float = _speed_profile.sample_speed(car.distance_along_track)
+		if _physics_config == null or _physics_config.v_top_speed <= 0.0:
+			return
+		var scale: float = car.v_ref / _physics_config.v_top_speed
+		speed = raw_speed * scale
+		car.current_multiplier = speed / _physics_config.v_top_speed
+	else:
+		if _pace_profile == null:
+			return
+		var pace_multiplier: float = _pace_profile.sample_multiplier(car.distance_along_track)
+		speed = car.base_speed_units_per_sec * pace_multiplier
+		car.current_multiplier = pace_multiplier
+
 	car.effective_speed_units_per_sec = speed
 	if speed <= 0.0:
 		return
@@ -140,34 +204,32 @@ func _step_car_chunk(car: RaceTypes.CarState, chunk_start_time: float, chunk_dt:
 	var raw_distance: float = previous_distance + speed * chunk_dt
 	var laps_crossed: int = int(floor(raw_distance / track_length))
 	car.distance_along_track = fposmod(raw_distance, track_length)
-
 	if laps_crossed <= 0:
 		return
 
-	# Guard division points even though speed is validated. This makes math robust
-	# against future config mutation or runtime editing.
+	# Guard division points even though speed is validated. This keeps crossing
+	# math safe against future runtime mutation or partial config edits.
 	if speed <= 0.0:
 		return
 
 	var time_to_first_cross: float = (track_length - previous_distance) / speed
-	var clamped_time_to_first_cross: float = time_to_first_cross if time_to_first_cross > 0.0 else 0.0
+	var clamped_time_to_first_cross: float = maxf(time_to_first_cross, 0.0)
 	var first_cross_time: float = chunk_start_time + clamped_time_to_first_cross
 	var lap_duration: float = track_length / speed
-
 	for crossing_index in range(laps_crossed):
 		var crossing_time: float = first_cross_time + float(crossing_index) * lap_duration
 		_register_lap_crossing(car, crossing_time)
 
 
 func _register_lap_crossing(car: RaceTypes.CarState, crossing_time: float) -> void:
-	# Optional out-lap handling is kept explicit so that future race modes can
-	# switch behavior without touching timing math in step().
+	# Out-lap handling is explicit so race modes can adjust policy later without
+	# touching crossing detection and accumulation logic.
 	if not _config.count_first_lap_from_start and car.last_lap_time < 0.0 and car.lap_count == 0:
 		car.lap_start_time = crossing_time
 		return
 
 	var raw_lap_time: float = crossing_time - car.lap_start_time
-	var lap_time: float = raw_lap_time if raw_lap_time > 0.0 else 0.0
+	var lap_time: float = maxf(raw_lap_time, 0.0)
 	car.last_lap_time = lap_time
 	car.best_lap_time = minf(car.best_lap_time, lap_time)
 	car.lap_start_time = crossing_time

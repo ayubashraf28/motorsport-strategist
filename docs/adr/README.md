@@ -11,3 +11,4 @@ Each ADR should include context, decision, alternatives considered, and conseque
 Current ADRs:
 - `0001-v0-godot-root-and-sim-placement.md`
 - `0002-v1-pace-profile-and-smoothing.md`
+- `0003-v1.1-physics-speed-profile.md`
