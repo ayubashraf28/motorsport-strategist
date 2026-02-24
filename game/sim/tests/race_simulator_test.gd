@@ -47,23 +47,32 @@ func test_first_lap_counted_from_race_start() -> void:
 
 
 func test_best_lap_uses_min_and_starts_as_inf() -> void:
-	var simulator := _build_simulator([_car("car_1", 50.0)], 100.0)
+	var simulator := _build_simulator([_car("car_1", 30.0)], 120.0)
 	assert(simulator.is_ready())
 
 	var initial_car: RaceTypes.CarState = simulator.get_snapshot().cars[0]
 	assert(is_inf(initial_car.best_lap_time))
 
-	simulator.step(2.05) # lap 1 = 2.0s
-	# Intentional internal change to validate best-lap min behavior under varied lap times.
-	simulator._cars[0].base_speed_units_per_sec = 40.0
-	simulator.step(2.55) # lap 2 = 2.5s (best should stay 2.0)
+	# Intentional internal speed changes validate that best lap tracks the minimum
+	# observed lap time even when stepping across non-boundary deltas.
+	_advance_until_lap_count(simulator, 1, 0.05, 400)
+	var lap_1: float = simulator.get_snapshot().cars[0].last_lap_time
+
+	simulator._cars[0].base_speed_units_per_sec = 24.0
+	_advance_until_lap_count(simulator, 2, 0.05, 400)
+	var lap_2: float = simulator.get_snapshot().cars[0].last_lap_time
+
 	simulator._cars[0].base_speed_units_per_sec = 80.0
-	simulator.step(1.30) # lap 3 = 1.25s (best should update)
+	_advance_until_lap_count(simulator, 3, 0.05, 400)
+	var lap_3: float = simulator.get_snapshot().cars[0].last_lap_time
 
 	var car: RaceTypes.CarState = simulator.get_snapshot().cars[0]
 	assert(car.lap_count == 3)
-	assert(abs(car.best_lap_time - 1.25) < 0.001)
-	assert(abs(car.last_lap_time - 1.25) < 0.001)
+	assert(lap_1 > 0.0 and lap_2 > 0.0 and lap_3 > 0.0)
+	assert(lap_3 < lap_1)
+	assert(lap_1 < lap_2)
+	assert(abs(car.best_lap_time - minf(lap_1, minf(lap_2, lap_3))) < 0.001)
+	assert(abs(car.last_lap_time - lap_3) < 0.001)
 
 
 func test_high_dt_multi_crossing_counts_each_lap_once() -> void:
@@ -265,3 +274,16 @@ func _straight_geometry(track_length: float, ds: float) -> RaceTypes.TrackGeomet
 	for i in range(sample_count):
 		geometry.curvatures[i] = 0.0
 	return geometry
+
+
+func _advance_until_lap_count(
+	simulator: RaceSimulator,
+	target_lap_count: int,
+	step_dt: float,
+	max_steps: int
+) -> void:
+	for _step in range(max_steps):
+		if simulator.get_snapshot().cars[0].lap_count >= target_lap_count:
+			return
+		simulator.step(step_dt)
+	assert(false)
