@@ -5,6 +5,11 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      platform:
+        description: "Artifact platform label"
+        required: false
+        default: "win64"
 
 permissions:
   contents: read
@@ -18,20 +23,33 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Create build metadata
+      - name: Build metadata
+        id: meta
         run: |
+          PLATFORM="${{ github.event.inputs.platform }}"
+          if [[ -z "$PLATFORM" ]]; then
+            PLATFORM="win64"
+          fi
+          SHORT_SHA="${GITHUB_SHA::7}"
+          ARTIFACT_BASENAME="${PLATFORM}-${GITHUB_REF_NAME}-${SHORT_SHA}"
+          echo "platform=$PLATFORM" >> "$GITHUB_OUTPUT"
+          echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
+          echo "artifact_basename=$ARTIFACT_BASENAME" >> "$GITHUB_OUTPUT"
+
           mkdir -p artifacts
           echo "run_number=${GITHUB_RUN_NUMBER}" > artifacts/build-metadata.txt
           echo "commit_sha=${GITHUB_SHA}" >> artifacts/build-metadata.txt
           echo "ref=${GITHUB_REF_NAME}" >> artifacts/build-metadata.txt
+          echo "platform=${PLATFORM}" >> artifacts/build-metadata.txt
           echo "created_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> artifacts/build-metadata.txt
 
       - name: Create source snapshot
         run: |
-          git archive --format=zip --output artifacts/source-${GITHUB_SHA::7}.zip HEAD
+          git archive --format=zip --output "artifacts/${{ steps.meta.outputs.artifact_basename }}.zip" HEAD
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: dev-build-${{ github.run_number }}
+          name: ${{ steps.meta.outputs.artifact_basename }}
           path: artifacts/
+          retention-days: 14

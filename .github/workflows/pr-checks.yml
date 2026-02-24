@@ -10,6 +10,9 @@ permissions:
 
 jobs:
   guardrails:
+    # Keep this name stable because branch protection requires:
+    # "PR Checks / guardrails"
+    name: guardrails
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

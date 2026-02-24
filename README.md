@@ -6,13 +6,13 @@ Production-ready repository bootstrap for a `main` + environments workflow.
 
 - `main`: always releasable, protected branch
 - Feature branches: `feat/*`, `fix/*`, `chore/*`
-- UAT candidates: tags `rc-*` from `main`
+- UAT candidates: tags `rc-vX.Y.Z-N` from `main`
 - Production releases: tags `vX.Y.Z` from `main`
 
 ## Environments
 
 - `dev`: build artifacts for internal testing on every merge to `main`
-- `uat`: release candidate artifacts from `rc-*` tags
+- `uat`: release candidate artifacts from `rc-vX.Y.Z-N` tags
 - `prod`: stable release artifacts from `v*` tags
 
 ## Repository layout
