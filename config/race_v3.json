@@ -88,21 +88,21 @@
     {
       "id": "car_02",
       "display_name": "Ferrari",
-      "v_ref": 81.0,
+      "v_ref": 83.0,
       "starting_compound": "medium",
       "starting_fuel_kg": 110.0
     },
     {
       "id": "car_03",
       "display_name": "Mercedes",
-      "v_ref": 80.0,
+      "v_ref": 83.0,
       "starting_compound": "soft",
       "starting_fuel_kg": 90.0
     },
     {
       "id": "car_04",
       "display_name": "McLaren",
-      "v_ref": 79.0,
+      "v_ref": 83.0,
       "starting_compound": "hard",
       "starting_fuel_kg": 110.0
     }

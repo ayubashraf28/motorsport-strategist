@@ -49,6 +49,47 @@ func test_capture_logs_only_when_lap_count_increases() -> void:
 	assert(int(lap_entries[1]["lap_number"]) == 2)
 
 
+func test_capture_logs_pit_and_request_events() -> void:
+	var logger := LapSnapshotLogger.new()
+	var snapshot: RaceTypes.RaceSnapshot = _build_snapshot([
+		_build_car("car_01", 1, 0)
+	], 0.0)
+	var pending_requests := {}
+
+	logger.start_session(snapshot, "user://telemetry_test")
+	assert(logger.get_last_error().is_empty())
+
+	pending_requests["car_01"] = {"compound": "hard", "fuel_kg": 90.0}
+	logger.capture(snapshot, pending_requests)
+
+	var car: RaceTypes.CarState = snapshot.cars[0]
+	car.is_in_pit = true
+	car.pit_phase = RaceTypes.PitPhase.ENTRY
+	snapshot.race_time = 1.0
+	logger.capture(snapshot, pending_requests)
+
+	car.pit_phase = RaceTypes.PitPhase.STOPPED
+	snapshot.race_time = 2.0
+	logger.capture(snapshot, pending_requests)
+
+	car.pit_phase = RaceTypes.PitPhase.RACING
+	car.is_in_pit = false
+	car.pit_stops_completed = 1
+	car.current_compound = "hard"
+	snapshot.race_time = 3.0
+	pending_requests.erase("car_01")
+	logger.capture(snapshot, pending_requests)
+
+	var output_path: String = logger.get_output_path()
+	logger.close()
+
+	var entries: Array = _read_jsonl(output_path)
+	assert(_filter_entries(entries, "pit_request_change").size() >= 2)
+	assert(_filter_entries(entries, "pit_state_change").size() >= 3)
+	assert(_filter_entries(entries, "pit_stop_complete").size() >= 1)
+	assert(_filter_entries(entries, "compound_change").size() >= 1)
+
+
 func _build_snapshot(cars: Array, race_time: float) -> RaceTypes.RaceSnapshot:
 	var snapshot := RaceTypes.RaceSnapshot.new()
 	snapshot.race_state = RaceTypes.RaceState.RUNNING

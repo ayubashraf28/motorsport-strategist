@@ -251,7 +251,7 @@ func _apply_snapshot(snapshot: RaceTypes.RaceSnapshot) -> void:
 	var pending_requests: Dictionary = _simulator.get_pending_pit_requests() if _simulator != null else {}
 	_hud.render(snapshot, _is_paused, _time_scale, pending_requests)
 	if ENABLE_LAP_SNAPSHOT_LOGGING and _lap_snapshot_logger != null:
-		_lap_snapshot_logger.capture(snapshot)
+		_lap_snapshot_logger.capture(snapshot, pending_requests)
 
 
 func _connect_ui_signals() -> void:
