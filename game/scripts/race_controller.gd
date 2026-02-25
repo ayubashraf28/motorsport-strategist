@@ -10,11 +10,14 @@ const CarDot = preload("res://scripts/car_dot.gd")
 const PaceDebugOverlay = preload("res://scripts/pace_debug_overlay.gd")
 const CurvatureDebugOverlay = preload("res://scripts/curvature_debug_overlay.gd")
 const SpeedDebugOverlay = preload("res://scripts/speed_debug_overlay.gd")
+const LapSnapshotLogger = preload("res://scripts/lap_snapshot_logger.gd")
 
 const FIXED_DT: float = 1.0 / 120.0
 const MAX_STEPS_PER_FRAME: int = 16
 const DOT_RADIUS: float = 7.0
 const TRACK_BAKE_INTERVAL: float = 8.0
+const ENABLE_LAP_SNAPSHOT_LOGGING: bool = true
+const LAP_SNAPSHOT_OUTPUT_DIR: String = "res://../data/telemetry"
 
 const DEBUG_MODE_OFF: int = 0
 const DEBUG_MODE_CURVATURE: int = 1
@@ -53,6 +56,7 @@ var _config_source_path: String = ""
 var _active_config: RaceTypes.RaceConfig = null
 var _runtime_geometry: RaceTypes.TrackGeometryData = null
 var _debug_mode: int = DEBUG_MODE_OFF
+var _lap_snapshot_logger: LapSnapshotLogger = LapSnapshotLogger.new()
 
 
 func _ready() -> void:
@@ -79,6 +83,11 @@ func _process(delta: float) -> void:
 			_maybe_warn_spiral_of_death()
 
 	_apply_snapshot(_simulator.get_snapshot())
+
+
+func _exit_tree() -> void:
+	if _lap_snapshot_logger != null:
+		_lap_snapshot_logger.close()
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -203,6 +212,7 @@ func _initialize_simulator() -> bool:
 		_simulator.get_available_compounds(),
 		_simulator.get_fuel_capacity_kg()
 	)
+	_start_lap_snapshot_logging()
 	return true
 
 
@@ -240,6 +250,8 @@ func _apply_snapshot(snapshot: RaceTypes.RaceSnapshot) -> void:
 
 	var pending_requests: Dictionary = _simulator.get_pending_pit_requests() if _simulator != null else {}
 	_hud.render(snapshot, _is_paused, _time_scale, pending_requests)
+	if ENABLE_LAP_SNAPSHOT_LOGGING and _lap_snapshot_logger != null:
+		_lap_snapshot_logger.capture(snapshot)
 
 
 func _connect_ui_signals() -> void:
@@ -282,6 +294,7 @@ func _reset_race() -> void:
 	_is_paused = false
 	_step_runner.reset()
 	_simulator.reset()
+	_start_lap_snapshot_logging()
 	_apply_snapshot(_simulator.get_snapshot())
 
 
@@ -398,6 +411,22 @@ func _apply_debug_mode_visibility() -> void:
 	_pace_debug_overlay.visible = _debug_mode == DEBUG_MODE_PACE
 	_curvature_debug_overlay.visible = _debug_mode == DEBUG_MODE_CURVATURE
 	_speed_debug_overlay.visible = _debug_mode == DEBUG_MODE_SPEED
+
+
+func _start_lap_snapshot_logging() -> void:
+	if not ENABLE_LAP_SNAPSHOT_LOGGING or _lap_snapshot_logger == null or _simulator == null:
+		return
+	_lap_snapshot_logger.start_session(_simulator.get_snapshot(), LAP_SNAPSHOT_OUTPUT_DIR)
+
+	var logger_error: String = _lap_snapshot_logger.get_last_error()
+	if not logger_error.is_empty():
+		push_warning(logger_error)
+		return
+
+	var logger_path: String = _lap_snapshot_logger.get_output_path()
+	if logger_path.is_empty():
+		return
+	print("Lap snapshots writing to %s" % logger_path)
 
 
 func _build_default_curve() -> Curve2D:
