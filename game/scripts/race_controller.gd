@@ -117,7 +117,7 @@ func _load_config() -> bool:
 		_hud.set_error("Race config could not be parsed.")
 		return false
 	if _active_config.cars.is_empty():
-		_hud.set_empty("No cars configured. Add cars in config/race_v2.json, config/race_v1.1.json, or config/race_v1.json.")
+		_hud.set_empty("No cars configured. Add cars in config/race_v3.json, config/race_v2.json, config/race_v1.1.json, or config/race_v1.json.")
 		return false
 	return true
 
@@ -197,6 +197,12 @@ func _initialize_simulator() -> bool:
 	_step_runner.reset()
 	_build_car_nodes(_simulator.get_snapshot().cars)
 	_configure_debug_overlays(runtime.track_length)
+	_hud.configure_strategy_ui(
+		_simulator.is_pit_enabled(),
+		_simulator.is_fuel_enabled(),
+		_simulator.get_available_compounds(),
+		_simulator.get_fuel_capacity_kg()
+	)
 	return true
 
 
@@ -232,13 +238,16 @@ func _apply_snapshot(snapshot: RaceTypes.RaceSnapshot) -> void:
 	if snapshot.race_state == RaceTypes.RaceState.FINISHED and not _is_paused:
 		_set_paused(true)
 
-	_hud.render(snapshot, _is_paused, _time_scale)
+	var pending_requests: Dictionary = _simulator.get_pending_pit_requests() if _simulator != null else {}
+	_hud.render(snapshot, _is_paused, _time_scale, pending_requests)
 
 
 func _connect_ui_signals() -> void:
 	_hud.pause_toggled.connect(_on_pause_toggled)
 	_hud.reset_requested.connect(_on_reset_requested)
 	_hud.speed_selected.connect(_on_speed_selected)
+	_hud.pit_requested.connect(_on_pit_requested)
+	_hud.pit_cancelled.connect(_on_pit_cancelled)
 
 
 func _on_pause_toggled(pause_requested: bool) -> void:
@@ -251,6 +260,16 @@ func _on_reset_requested() -> void:
 
 func _on_speed_selected(speed_scale: float) -> void:
 	_set_time_scale(speed_scale)
+
+
+func _on_pit_requested(car_id: String, compound: String, fuel_kg: float) -> void:
+	if _simulator != null:
+		_simulator.request_pit_stop(car_id, compound, fuel_kg)
+
+
+func _on_pit_cancelled(car_id: String) -> void:
+	if _simulator != null:
+		_simulator.cancel_pit_stop(car_id)
 
 
 func _set_paused(value: bool) -> void:

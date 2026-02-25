@@ -3,12 +3,16 @@ class_name RaceConfigLoader
 
 const RaceTypes = preload("res://sim/src/race_types.gd")
 const DegradationModel = preload("res://sim/src/degradation_model.gd")
+const TyreCompound = preload("res://sim/src/tyre_compound.gd")
+const FuelModel = preload("res://sim/src/fuel_model.gd")
+const TrackLoader = preload("res://scripts/track_loader.gd")
 
 
 static func load_race_config(paths: PackedStringArray = PackedStringArray()) -> Dictionary:
 	var candidate_paths: PackedStringArray = paths
 	if candidate_paths.is_empty():
 		candidate_paths = PackedStringArray([
+			ProjectSettings.globalize_path("res://../config/race_v3.json"),
 			ProjectSettings.globalize_path("res://../config/race_v2.json"),
 			ProjectSettings.globalize_path("res://../config/race_v1.1.json"),
 			ProjectSettings.globalize_path("res://../config/race_v1.json")
@@ -23,7 +27,10 @@ static func load_race_config(paths: PackedStringArray = PackedStringArray()) -> 
 			"source_path": ""
 		}
 
-	var parse_result: Dictionary = _parse_config_json(load_result.get("content", ""))
+	var parse_result: Dictionary = _parse_config_json(
+		load_result.get("content", ""),
+		load_result.get("path", "")
+	)
 	parse_result["source_path"] = load_result.get("path", "")
 	return parse_result
 
@@ -53,7 +60,7 @@ static func _read_first_existing_file(candidate_paths: PackedStringArray) -> Dic
 	}
 
 
-static func _parse_config_json(content: String) -> Dictionary:
+static func _parse_config_json(content: String, source_path: String = "") -> Dictionary:
 	var errors: PackedStringArray = PackedStringArray()
 	var parser: JSON = JSON.new()
 	var parse_status: int = parser.parse(content)
@@ -71,7 +78,9 @@ static func _parse_config_json(content: String) -> Dictionary:
 	config.schema_version = schema_version
 
 	_parse_common_fields(root, config, errors)
-	if schema_version == "2.0":
+	if schema_version == "3.0":
+		_parse_v3_config(root, config, errors, source_path)
+	elif schema_version == "2.0":
 		_parse_v2_config(root, config, errors)
 	elif schema_version == "1.1":
 		_parse_v1_1_config(root, config, errors)
@@ -92,7 +101,7 @@ static func _parse_schema_version(root: Dictionary, errors: PackedStringArray) -
 	var schema_version: String = String(schema_raw).strip_edges()
 	if schema_version.is_empty():
 		return "1.0"
-	if schema_version != "1.0" and schema_version != "1.1" and schema_version != "2.0":
+	if schema_version != "1.0" and schema_version != "1.1" and schema_version != "2.0" and schema_version != "3.0":
 		errors.append("Unsupported schema_version '%s'." % schema_version)
 		return "1.0"
 	return schema_version
@@ -215,6 +224,56 @@ static func _parse_v2_config(root: Dictionary, config: RaceTypes.RaceConfig, err
 	if typeof(cars_raw) == TYPE_ARRAY:
 		var cars_array: Array = cars_raw
 		_apply_v2_car_overrides(cars_array, config.cars, errors)
+
+
+static func _parse_v3_config(
+	root: Dictionary,
+	config: RaceTypes.RaceConfig,
+	errors: PackedStringArray,
+	source_path: String
+) -> void:
+	_parse_v2_config(root, config, errors)
+
+	var compounds_raw: Variant = root.get("compounds", [])
+	if compounds_raw == null:
+		compounds_raw = []
+	if typeof(compounds_raw) != TYPE_ARRAY:
+		errors.append("compounds must be an array when provided.")
+	else:
+		config.compounds = _parse_compounds(compounds_raw, errors)
+		if not config.compounds.is_empty():
+			var compound_errors: PackedStringArray = TyreCompound.validate_compounds(config.compounds)
+			for compound_error in compound_errors:
+				errors.append(compound_error)
+
+	var fuel_raw: Variant = root.get("fuel", null)
+	if fuel_raw != null:
+		if typeof(fuel_raw) != TYPE_DICTIONARY:
+			errors.append("fuel must be an object when provided.")
+		else:
+			var fuel_result: Dictionary = _parse_fuel_config(fuel_raw, "fuel")
+			var fuel_errors: PackedStringArray = fuel_result.get("errors", PackedStringArray())
+			for fuel_error in fuel_errors:
+				errors.append(fuel_error)
+			config.fuel = fuel_result.get("config", null)
+
+	var pit_raw: Variant = root.get("pit", null)
+	if pit_raw != null:
+		if typeof(pit_raw) != TYPE_DICTIONARY:
+			errors.append("pit must be an object when provided.")
+		else:
+			var pit_result: Dictionary = _parse_pit_config(pit_raw, "pit")
+			var pit_errors: PackedStringArray = pit_result.get("errors", PackedStringArray())
+			for pit_error in pit_errors:
+				errors.append(pit_error)
+			config.pit = pit_result.get("config", null)
+
+	var cars_raw: Variant = root.get("cars", [])
+	if typeof(cars_raw) == TYPE_ARRAY:
+		var cars_array: Array = cars_raw
+		_apply_v3_car_overrides(cars_array, config.cars, errors)
+
+	_validate_pit_distances_against_track_length(config, source_path, errors)
 
 
 static func _parse_pace_track(track_raw: Dictionary) -> Dictionary:
@@ -420,6 +479,41 @@ static func _apply_v2_car_overrides(cars_raw: Array, cars: Array[RaceTypes.CarCo
 		target_car.degradation = parse_result.get("config", null)
 
 
+static func _apply_v3_car_overrides(cars_raw: Array, cars: Array[RaceTypes.CarConfig], errors: PackedStringArray) -> void:
+	var cars_by_id: Dictionary = {}
+	for car in cars:
+		if car != null and not car.id.is_empty():
+			cars_by_id[car.id] = car
+
+	for index in range(cars_raw.size()):
+		var entry: Variant = cars_raw[index]
+		if typeof(entry) != TYPE_DICTIONARY:
+			continue
+
+		var car_dict: Dictionary = entry
+		var id_raw: Variant = car_dict.get("id", "")
+		if typeof(id_raw) != TYPE_STRING:
+			continue
+		var car_id: String = String(id_raw).strip_edges()
+		if car_id.is_empty() or not cars_by_id.has(car_id):
+			continue
+
+		var target_car: RaceTypes.CarConfig = cars_by_id[car_id]
+		if car_dict.has("starting_compound"):
+			var starting_compound_raw: Variant = car_dict.get("starting_compound", "")
+			if typeof(starting_compound_raw) != TYPE_STRING:
+				errors.append("cars[%d].starting_compound must be a string when provided." % index)
+			else:
+				target_car.starting_compound = String(starting_compound_raw).strip_edges()
+
+		if car_dict.has("starting_fuel_kg"):
+			var starting_fuel_raw: Variant = car_dict.get("starting_fuel_kg", -1.0)
+			if not _is_numeric(starting_fuel_raw):
+				errors.append("cars[%d].starting_fuel_kg must be numeric when provided." % index)
+			else:
+				target_car.starting_fuel_kg = float(starting_fuel_raw)
+
+
 static func _read_car_id(
 	car_dict: Dictionary,
 	index: int,
@@ -498,6 +592,21 @@ static func _parse_degradation_config(config_raw: Dictionary, context: String) -
 			config.min_multiplier = float(config_raw["min_multiplier"])
 		else:
 			errors.append("%s.min_multiplier must be numeric." % context)
+	if config_raw.has("optimal_threshold"):
+		if _is_numeric(config_raw["optimal_threshold"]):
+			config.optimal_threshold = float(config_raw["optimal_threshold"])
+		else:
+			errors.append("%s.optimal_threshold must be numeric." % context)
+	if config_raw.has("cliff_threshold"):
+		if _is_numeric(config_raw["cliff_threshold"]):
+			config.cliff_threshold = float(config_raw["cliff_threshold"])
+		else:
+			errors.append("%s.cliff_threshold must be numeric." % context)
+	if config_raw.has("cliff_multiplier"):
+		if _is_numeric(config_raw["cliff_multiplier"]):
+			config.cliff_multiplier = float(config_raw["cliff_multiplier"])
+		else:
+			errors.append("%s.cliff_multiplier must be numeric." % context)
 
 	var validation_errors: PackedStringArray = DegradationModel.validate_config(config)
 	for validation_error in validation_errors:
@@ -546,6 +655,197 @@ static func _parse_overtaking_config(config_raw: Dictionary, context: String) ->
 		errors.append("%s.cooldown_seconds must be >= 0." % context)
 
 	return {"config": config, "errors": errors}
+
+
+static func _parse_compounds(compounds_raw: Variant, errors: PackedStringArray) -> Array[RaceTypes.TyreCompoundConfig]:
+	var compounds: Array[RaceTypes.TyreCompoundConfig] = []
+	var entries: Array = compounds_raw
+	for index in range(entries.size()):
+		var entry: Variant = entries[index]
+		if typeof(entry) != TYPE_DICTIONARY:
+			errors.append("compounds[%d] must be an object." % index)
+			continue
+
+		var compound_dict: Dictionary = entry
+		var name_raw: Variant = compound_dict.get("name", "")
+		if typeof(name_raw) != TYPE_STRING:
+			errors.append("compounds[%d].name must be a string." % index)
+			continue
+		var clean_name: String = String(name_raw).strip_edges()
+		if clean_name.is_empty():
+			errors.append("compounds[%d].name must be non-empty." % index)
+			continue
+
+		var degradation_raw: Variant = compound_dict.get("degradation", null)
+		if typeof(degradation_raw) != TYPE_DICTIONARY:
+			errors.append("compounds[%d].degradation must be an object." % index)
+			continue
+
+		var degradation_result: Dictionary = _parse_degradation_config(
+			degradation_raw,
+			"compounds[%d].degradation" % index
+		)
+		var degradation_errors: PackedStringArray = degradation_result.get("errors", PackedStringArray())
+		for degradation_error in degradation_errors:
+			errors.append(degradation_error)
+
+		var compound: RaceTypes.TyreCompoundConfig = RaceTypes.TyreCompoundConfig.new()
+		compound.name = clean_name
+		compound.degradation = degradation_result.get("config", null)
+		compounds.append(compound)
+	return compounds
+
+
+static func _parse_fuel_config(config_raw: Dictionary, context: String) -> Dictionary:
+	var errors: PackedStringArray = PackedStringArray()
+	var config: RaceTypes.FuelConfig = RaceTypes.FuelConfig.new()
+
+	if config_raw.has("enabled"):
+		if typeof(config_raw["enabled"]) == TYPE_BOOL:
+			config.enabled = config_raw["enabled"]
+		else:
+			errors.append("%s.enabled must be a boolean." % context)
+	if config_raw.has("max_capacity_kg"):
+		if _is_numeric(config_raw["max_capacity_kg"]):
+			config.max_capacity_kg = float(config_raw["max_capacity_kg"])
+		else:
+			errors.append("%s.max_capacity_kg must be numeric." % context)
+	if config_raw.has("consumption_per_lap_kg"):
+		if _is_numeric(config_raw["consumption_per_lap_kg"]):
+			config.consumption_per_lap_kg = float(config_raw["consumption_per_lap_kg"])
+		else:
+			errors.append("%s.consumption_per_lap_kg must be numeric." % context)
+	if config_raw.has("weight_penalty_factor"):
+		if _is_numeric(config_raw["weight_penalty_factor"]):
+			config.weight_penalty_factor = float(config_raw["weight_penalty_factor"])
+		else:
+			errors.append("%s.weight_penalty_factor must be numeric." % context)
+	if config_raw.has("fuel_empty_penalty"):
+		if _is_numeric(config_raw["fuel_empty_penalty"]):
+			config.fuel_empty_penalty = float(config_raw["fuel_empty_penalty"])
+		else:
+			errors.append("%s.fuel_empty_penalty must be numeric." % context)
+	if config_raw.has("refuel_rate_kg_per_sec"):
+		if _is_numeric(config_raw["refuel_rate_kg_per_sec"]):
+			config.refuel_rate_kg_per_sec = float(config_raw["refuel_rate_kg_per_sec"])
+		else:
+			errors.append("%s.refuel_rate_kg_per_sec must be numeric." % context)
+
+	var validation_errors: PackedStringArray = FuelModel.validate_config(config)
+	for validation_error in validation_errors:
+		errors.append(validation_error)
+	return {"config": config, "errors": errors}
+
+
+static func _parse_pit_config(config_raw: Dictionary, context: String) -> Dictionary:
+	var errors: PackedStringArray = PackedStringArray()
+	var config: RaceTypes.PitConfig = RaceTypes.PitConfig.new()
+
+	if config_raw.has("enabled"):
+		if typeof(config_raw["enabled"]) == TYPE_BOOL:
+			config.enabled = config_raw["enabled"]
+		else:
+			errors.append("%s.enabled must be a boolean." % context)
+	if config_raw.has("pit_entry_distance"):
+		if _is_numeric(config_raw["pit_entry_distance"]):
+			config.pit_entry_distance = float(config_raw["pit_entry_distance"])
+		else:
+			errors.append("%s.pit_entry_distance must be numeric." % context)
+	if config_raw.has("pit_exit_distance"):
+		if _is_numeric(config_raw["pit_exit_distance"]):
+			config.pit_exit_distance = float(config_raw["pit_exit_distance"])
+		else:
+			errors.append("%s.pit_exit_distance must be numeric." % context)
+	if config_raw.has("pit_box_distance"):
+		if _is_numeric(config_raw["pit_box_distance"]):
+			config.pit_box_distance = float(config_raw["pit_box_distance"])
+		else:
+			errors.append("%s.pit_box_distance must be numeric." % context)
+	if config_raw.has("pit_lane_speed_limit"):
+		if _is_numeric(config_raw["pit_lane_speed_limit"]):
+			config.pit_lane_speed_limit = float(config_raw["pit_lane_speed_limit"])
+		else:
+			errors.append("%s.pit_lane_speed_limit must be numeric." % context)
+	if config_raw.has("base_pit_stop_duration"):
+		if _is_numeric(config_raw["base_pit_stop_duration"]):
+			config.base_pit_stop_duration = float(config_raw["base_pit_stop_duration"])
+		else:
+			errors.append("%s.base_pit_stop_duration must be numeric." % context)
+	if config_raw.has("pit_entry_duration"):
+		if _is_numeric(config_raw["pit_entry_duration"]):
+			config.pit_entry_duration = float(config_raw["pit_entry_duration"])
+		else:
+			errors.append("%s.pit_entry_duration must be numeric." % context)
+	if config_raw.has("pit_exit_duration"):
+		if _is_numeric(config_raw["pit_exit_duration"]):
+			config.pit_exit_duration = float(config_raw["pit_exit_duration"])
+		else:
+			errors.append("%s.pit_exit_duration must be numeric." % context)
+	if config_raw.has("min_stop_lap"):
+		if _is_numeric(config_raw["min_stop_lap"]):
+			config.min_stop_lap = int(config_raw["min_stop_lap"])
+		else:
+			errors.append("%s.min_stop_lap must be numeric." % context)
+	if config_raw.has("max_stops"):
+		if _is_numeric(config_raw["max_stops"]):
+			config.max_stops = int(config_raw["max_stops"])
+		else:
+			errors.append("%s.max_stops must be numeric." % context)
+
+	if config.pit_lane_speed_limit <= 0.0:
+		errors.append("%s.pit_lane_speed_limit must be > 0." % context)
+	if config.base_pit_stop_duration < 1.0:
+		errors.append("%s.base_pit_stop_duration must be >= 1.0." % context)
+	if config.min_stop_lap < 0:
+		errors.append("%s.min_stop_lap must be >= 0." % context)
+	if config.max_stops <= 0:
+		errors.append("%s.max_stops must be > 0." % context)
+	if config.pit_entry_distance < 0.0:
+		errors.append("%s.pit_entry_distance must be >= 0." % context)
+	if config.pit_exit_distance < 0.0:
+		errors.append("%s.pit_exit_distance must be >= 0." % context)
+	if is_equal_approx(config.pit_entry_distance, config.pit_exit_distance):
+		errors.append("%s.pit_entry_distance must differ from pit_exit_distance." % context)
+	if config.pit_box_distance >= 0.0:
+		if is_equal_approx(config.pit_box_distance, config.pit_entry_distance):
+			errors.append("%s.pit_box_distance must differ from pit_entry_distance." % context)
+		if is_equal_approx(config.pit_box_distance, config.pit_exit_distance):
+			errors.append("%s.pit_box_distance must differ from pit_exit_distance." % context)
+
+	return {"config": config, "errors": errors}
+
+
+static func _validate_pit_distances_against_track_length(
+	config: RaceTypes.RaceConfig,
+	source_path: String,
+	errors: PackedStringArray
+) -> void:
+	if config == null or config.pit == null or not config.pit.enabled:
+		return
+	if not (config.track is RaceTypes.SpeedProfileConfig):
+		return
+
+	var speed_track: RaceTypes.SpeedProfileConfig = config.track as RaceTypes.SpeedProfileConfig
+	if speed_track == null or speed_track.geometry_asset_path.strip_edges().is_empty():
+		return
+
+	var load_result: Dictionary = TrackLoader.load_track_geometry(speed_track.geometry_asset_path, source_path)
+	var load_errors: PackedStringArray = load_result.get("errors", PackedStringArray())
+	if not load_errors.is_empty():
+		for load_error in load_errors:
+			errors.append("pit track-length validation: %s" % load_error)
+		return
+
+	var geometry: RaceTypes.TrackGeometryData = load_result.get("geometry", null)
+	if geometry == null or geometry.track_length <= 0.0:
+		return
+
+	if config.pit.pit_entry_distance >= geometry.track_length:
+		errors.append("pit.pit_entry_distance must be in [0, track_length).")
+	if config.pit.pit_exit_distance >= geometry.track_length:
+		errors.append("pit.pit_exit_distance must be in [0, track_length).")
+	if config.pit.pit_box_distance >= geometry.track_length:
+		errors.append("pit.pit_box_distance must be in [0, track_length) when provided.")
 
 
 static func _read_positive_float(

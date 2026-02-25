@@ -8,6 +8,11 @@ Coverage priorities:
 - standings and interval correctness
 - race-state transitions and finish ordering
 - degradation model behavior and validation
+- tyre compound lookup/validation behavior
+- stint tracking and pit-history invariants
+- fuel multiplier, consumption, and refuel behavior
+- pit stop phase transitions and entry/exit rules
+- pit strategy queue request/cancel/consume behavior
 - overtaking/held-up/cooldown interaction behavior
 - reset/initial state invariants
 - validation failures for malformed configuration

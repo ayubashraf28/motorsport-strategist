@@ -107,6 +107,16 @@ func test_finished_car_does_not_block() -> void:
 	assert(behind.effective_speed_units_per_sec == 6.0)
 
 
+func test_car_in_pit_is_skipped() -> void:
+	var manager := _manager(true, 50.0, 2.0, 0.1, 3.0)
+	var ahead := _car("a", 100.0, 100.0, 5.0)
+	var behind := _car("b", 90.0, 90.0, 6.0)
+	ahead.is_in_pit = true
+	manager.process_interactions([ahead, behind], 1000.0, 0.0)
+	assert(not behind.is_held_up)
+	assert(behind.effective_speed_units_per_sec == 6.0)
+
+
 func test_cooldown_key_is_symmetric() -> void:
 	var manager := _manager(true, 50.0, 2.0, 0.1, 3.0)
 	var key_a: String = manager._get_cooldown_key("car_a", "car_b")

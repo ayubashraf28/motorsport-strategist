@@ -303,6 +303,87 @@ func test_per_car_config_overrides_global_degradation() -> void:
 	assert(snapshot.cars[0].degradation_multiplier > snapshot.cars[1].degradation_multiplier)
 
 
+func test_pit_stop_resets_stint_state_and_changes_compound() -> void:
+	var simulator := _build_simulator_v3(_car_v3("car_1", 50.0, "soft", 90.0))
+	assert(simulator.is_ready())
+
+	simulator.step(2.05)
+	simulator.request_pit_stop("car_1", "hard", -1.0)
+
+	for _i in range(800):
+		simulator.step(0.05)
+		if simulator.get_snapshot().cars[0].pit_stops_completed >= 1:
+			break
+
+	var snapshot_after_pit: RaceTypes.RaceSnapshot = simulator.get_snapshot()
+	var car_after_pit: RaceTypes.CarState = snapshot_after_pit.cars[0]
+	assert(car_after_pit.pit_stops_completed == 1)
+	assert(car_after_pit.current_compound == "hard")
+	assert(car_after_pit.stint_number == 2)
+	assert(car_after_pit.stint_lap_count == 0)
+
+	simulator.step(2.1)
+	var snapshot_after_next_lap: RaceTypes.RaceSnapshot = simulator.get_snapshot()
+	assert(snapshot_after_next_lap.cars[0].stint_lap_count >= 1)
+
+
+func test_fuel_consumes_per_lap_and_multiplier_increases() -> void:
+	var simulator := _build_simulator_v3(_car_v3("car_1", 50.0, "soft", 100.0))
+	assert(simulator.is_ready())
+
+	var start_car: RaceTypes.CarState = simulator.get_snapshot().cars[0]
+	var start_fuel: float = start_car.fuel_kg
+	var start_multiplier: float = start_car.fuel_multiplier
+
+	simulator.step(2.1)
+	var car_after_lap: RaceTypes.CarState = simulator.get_snapshot().cars[0]
+	assert(car_after_lap.fuel_kg < start_fuel)
+	assert(car_after_lap.fuel_multiplier > start_multiplier)
+
+
+func test_pit_request_ignored_when_pit_disabled() -> void:
+	var config := RaceTypes.RaceConfig.new()
+	config.track = _constant_track_profile(100.0)
+	config.compounds = _v3_compounds()
+	config.cars.append(_car_v3("car_1", 50.0, "soft", 100.0))
+
+	var runtime := RaceTypes.RaceRuntimeParams.new()
+	runtime.track_length = 100.0
+
+	var simulator := RaceSimulator.new()
+	simulator.initialize(config, runtime)
+	assert(simulator.is_ready())
+
+	simulator.step(0.1)
+	simulator.request_pit_stop("car_1", "hard", -1.0)
+	assert(not simulator.has_pending_pit_request("car_1"))
+
+
+func test_lap_not_counted_when_pit_entry_is_before_finish_line() -> void:
+	var config := RaceTypes.RaceConfig.new()
+	config.track = _constant_track_profile(100.0)
+	config.compounds = _v3_compounds()
+	config.fuel = _v3_fuel()
+	config.pit = _v3_pit()
+	config.pit.min_stop_lap = 0
+	config.cars.append(_car_v3("car_1", 50.0, "soft", 100.0))
+
+	var runtime := RaceTypes.RaceRuntimeParams.new()
+	runtime.track_length = 100.0
+
+	var simulator := RaceSimulator.new()
+	simulator.initialize(config, runtime)
+	assert(simulator.is_ready())
+
+	simulator.step(0.05)
+	simulator.request_pit_stop("car_1", "hard", -1.0)
+	simulator.step(1.9)
+
+	var car: RaceTypes.CarState = simulator.get_snapshot().cars[0]
+	assert(car.is_in_pit)
+	assert(car.lap_count == 0)
+
+
 func _build_simulator(car_configs: Array, track_length: float) -> RaceSimulator:
 	var config := RaceTypes.RaceConfig.new()
 	config.track = _constant_track_profile(track_length)
@@ -314,6 +395,26 @@ func _build_simulator(car_configs: Array, track_length: float) -> RaceSimulator:
 
 	var runtime := RaceTypes.RaceRuntimeParams.new()
 	runtime.track_length = track_length
+
+	var simulator := RaceSimulator.new()
+	simulator.initialize(config, runtime)
+	return simulator
+
+
+func _build_simulator_v3(car_config: RaceTypes.CarConfig) -> RaceSimulator:
+	var config := RaceTypes.RaceConfig.new()
+	config.schema_version = "3.0"
+	config.track = _constant_track_profile(100.0)
+	config.compounds = _v3_compounds()
+	config.fuel = _v3_fuel()
+	config.pit = _v3_pit()
+	config.cars.append(car_config)
+	config.count_first_lap_from_start = true
+	config.seed = 0
+	config.default_time_scale = 1.0
+
+	var runtime := RaceTypes.RaceRuntimeParams.new()
+	runtime.track_length = 100.0
 
 	var simulator := RaceSimulator.new()
 	simulator.initialize(config, runtime)
@@ -427,6 +528,22 @@ func _car_v1_1(id_value: String, v_ref_value: float) -> RaceTypes.CarConfig:
 	return car
 
 
+func _car_v3(
+	id_value: String,
+	speed_value: float,
+	starting_compound: String,
+	starting_fuel_kg: float
+) -> RaceTypes.CarConfig:
+	var car := RaceTypes.CarConfig.new()
+	car.id = id_value
+	car.display_name = id_value
+	car.base_speed_units_per_sec = speed_value
+	car.v_ref = speed_value
+	car.starting_compound = starting_compound
+	car.starting_fuel_kg = starting_fuel_kg
+	return car
+
+
 func _constant_track_profile(track_length: float) -> RaceTypes.PaceProfileConfig:
 	var profile := RaceTypes.PaceProfileConfig.new()
 	profile.blend_distance = 0.0
@@ -448,6 +565,58 @@ func _speed_track_config(v_top_speed: float) -> RaceTypes.SpeedProfileConfig:
 	speed_track.physics.v_top_speed = v_top_speed
 	speed_track.physics.curvature_epsilon = 0.0001
 	return speed_track
+
+
+func _v3_compounds() -> Array[RaceTypes.TyreCompoundConfig]:
+	var soft := RaceTypes.TyreCompoundConfig.new()
+	soft.name = "soft"
+	soft.degradation = RaceTypes.DegradationConfig.new()
+	soft.degradation.warmup_laps = 0.3
+	soft.degradation.peak_multiplier = 1.0
+	soft.degradation.degradation_rate = 0.04
+	soft.degradation.min_multiplier = 0.70
+	soft.degradation.optimal_threshold = 0.75
+	soft.degradation.cliff_threshold = 0.30
+	soft.degradation.cliff_multiplier = 3.0
+
+	var hard := RaceTypes.TyreCompoundConfig.new()
+	hard.name = "hard"
+	hard.degradation = RaceTypes.DegradationConfig.new()
+	hard.degradation.warmup_laps = 0.8
+	hard.degradation.peak_multiplier = 0.976
+	hard.degradation.degradation_rate = 0.01
+	hard.degradation.min_multiplier = 0.80
+	hard.degradation.optimal_threshold = 0.75
+	hard.degradation.cliff_threshold = 0.30
+	hard.degradation.cliff_multiplier = 3.0
+
+	return [soft, hard]
+
+
+func _v3_fuel() -> RaceTypes.FuelConfig:
+	var fuel := RaceTypes.FuelConfig.new()
+	fuel.enabled = true
+	fuel.max_capacity_kg = 100.0
+	fuel.consumption_per_lap_kg = 10.0
+	fuel.weight_penalty_factor = 0.1
+	fuel.fuel_empty_penalty = 0.5
+	fuel.refuel_rate_kg_per_sec = 5.0
+	return fuel
+
+
+func _v3_pit() -> RaceTypes.PitConfig:
+	var pit := RaceTypes.PitConfig.new()
+	pit.enabled = true
+	pit.pit_entry_distance = 75.0
+	pit.pit_exit_distance = 10.0
+	pit.pit_box_distance = 92.5
+	pit.pit_lane_speed_limit = 20.0
+	pit.base_pit_stop_duration = 1.0
+	pit.pit_entry_duration = 0.2
+	pit.pit_exit_duration = 0.2
+	pit.min_stop_lap = 1
+	pit.max_stops = 3
+	return pit
 
 
 func _straight_geometry(track_length: float, ds: float) -> RaceTypes.TrackGeometryData:

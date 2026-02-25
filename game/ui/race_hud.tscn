@@ -36,7 +36,7 @@ theme_override_constants/separation = 8
 
 [node name="TitleLabel" type="Label" parent="RootMargin/Panel/MainColumn"]
 layout_mode = 2
-text = "Racing Manager Prototype v2"
+text = "Racing Manager Prototype v3"
 
 [node name="StateLabel" type="Label" parent="RootMargin/Panel/MainColumn"]
 unique_name_in_owner = true
@@ -45,7 +45,7 @@ text = "Initializing..."
 
 [node name="HeaderGrid" type="GridContainer" parent="RootMargin/Panel/MainColumn"]
 layout_mode = 2
-columns = 9
+columns = 12
 
 [node name="HeaderPosition" type="Label" parent="RootMargin/Panel/MainColumn/HeaderGrid"]
 layout_mode = 2
@@ -55,7 +55,13 @@ text = "P"
 [node name="HeaderCarId" type="Label" parent="RootMargin/Panel/MainColumn/HeaderGrid"]
 layout_mode = 2
 size_flags_horizontal = 3
-text = "Car ID"
+text = "ID"
+
+[node name="HeaderCompound" type="Label" parent="RootMargin/Panel/MainColumn/HeaderGrid"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Compound"
 
 [node name="HeaderSpeed" type="Label" parent="RootMargin/Panel/MainColumn/HeaderGrid"]
 layout_mode = 2
@@ -65,7 +71,13 @@ text = "Speed"
 [node name="HeaderLapCount" type="Label" parent="RootMargin/Panel/MainColumn/HeaderGrid"]
 layout_mode = 2
 size_flags_horizontal = 3
-text = "Laps"
+text = "Lap Count"
+
+[node name="HeaderStint" type="Label" parent="RootMargin/Panel/MainColumn/HeaderGrid"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Stint"
 
 [node name="HeaderGap" type="Label" parent="RootMargin/Panel/MainColumn/HeaderGrid"]
 layout_mode = 2
@@ -76,6 +88,12 @@ text = "Gap"
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Deg"
+
+[node name="HeaderFuel" type="Label" parent="RootMargin/Panel/MainColumn/HeaderGrid"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Fuel"
 
 [node name="HeaderCurrentLap" type="Label" parent="RootMargin/Panel/MainColumn/HeaderGrid"]
 layout_mode = 2
@@ -96,7 +114,7 @@ text = "Best Lap"
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
-columns = 9
+columns = 12
 
 [node name="ControlsRow" type="HBoxContainer" parent="RootMargin/Panel/MainColumn"]
 layout_mode = 2
