@@ -4,6 +4,7 @@ Documentation hub for architecture, decisions, and product quality standards.
 
 - `architecture/`: system design, boundaries, and module responsibilities
 - `adr/`: architectural decision records
+- `documentation/`: current-state technical and business handoff documentation
 - `ui-ux/`: UX principles, interaction rules, and design constraints
 
 Recent additions:
@@ -13,3 +14,4 @@ Recent additions:
 - ADR for pace profile smoothing and validation decisions
 - v1.1 physics speed-profile architecture document
 - ADR for curvature-derived speed profile and geometry asset pipeline
+- current-state technical and business documentation bundle for project handoff
