@@ -467,7 +467,8 @@ func _compute_car_speed(car: RaceTypes.CarState) -> void:
 	car.reference_speed_units_per_sec = maxf(speed, 0.001)
 
 	var degradation_inputs: Dictionary = _get_degradation_inputs(car)
-	var degradation_config: RaceTypes.DegradationConfig = degradation_inputs.get("config", null)
+	var degradation_config_variant: Variant = degradation_inputs.get("config", null)
+	var degradation_config: RaceTypes.DegradationConfig = degradation_config_variant as RaceTypes.DegradationConfig
 	car.degradation_multiplier = DegradationModel.compute_multiplier(
 		int(degradation_inputs.get("lap_count", car.lap_count)),
 		float(degradation_inputs.get("fractional_lap", 0.0)),
