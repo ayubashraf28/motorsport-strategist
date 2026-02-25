@@ -32,27 +32,61 @@ static func compute_multiplier(
 	if total_range <= 0.0 or rate <= 0.0:
 		return clampf(peak, floor_mult, peak)
 
+	var base_life_laps: float = total_range / rate
+	var wear_progress: float = clampf(laps_after_warmup / maxf(base_life_laps, 0.000001), 0.0, 1.0)
+
 	var optimal_thresh: float = clampf(config.optimal_threshold, 0.0, 1.0)
 	var cliff_thresh: float = clampf(config.cliff_threshold, 0.0, optimal_thresh)
 	var cliff_mult: float = maxf(config.cliff_multiplier, 1.0)
 
-	var optimal_mult: float = floor_mult + total_range * optimal_thresh
+	var optimal_wear_end: float = 1.0 - optimal_thresh
+	var cliff_wear_start: float = 1.0 - cliff_thresh
 	var cliff_mult_value: float = floor_mult + total_range * cliff_thresh
 
-	var optimal_laps: float = (peak - optimal_mult) / rate if rate > 0.0 else INF
-	if laps_after_warmup <= optimal_laps:
+	if wear_progress <= optimal_wear_end:
 		return clampf(peak, floor_mult, peak)
 
-	var gradual_laps: float = (optimal_mult - cliff_mult_value) / rate if rate > 0.0 else INF
-	var laps_into_gradual: float = laps_after_warmup - optimal_laps
-	if laps_into_gradual <= gradual_laps:
-		var gradual_degraded: float = optimal_mult - laps_into_gradual * rate
+	var gradual_denom: float = cliff_wear_start - optimal_wear_end
+	if wear_progress <= cliff_wear_start and gradual_denom > 0.0:
+		var gradual_t: float = (wear_progress - optimal_wear_end) / gradual_denom
+		var gradual_degraded: float = lerpf(peak, cliff_mult_value, clampf(gradual_t, 0.0, 1.0))
 		return clampf(gradual_degraded, floor_mult, peak)
 
-	var laps_into_cliff: float = laps_into_gradual - gradual_laps
-	var cliff_rate: float = rate * cliff_mult
-	var cliff_degraded: float = cliff_mult_value - laps_into_cliff * cliff_rate
+	if wear_progress <= cliff_wear_start:
+		return clampf(cliff_mult_value, floor_mult, peak)
+
+	var cliff_denom: float = 1.0 - cliff_wear_start
+	if cliff_denom <= 0.0:
+		return clampf(floor_mult, floor_mult, peak)
+
+	var cliff_t: float = (wear_progress - cliff_wear_start) / cliff_denom
+	var cliff_eased: float = 1.0 - pow(1.0 - clampf(cliff_t, 0.0, 1.0), cliff_mult)
+	var cliff_degraded: float = lerpf(cliff_mult_value, floor_mult, cliff_eased)
 	return clampf(cliff_degraded, floor_mult, peak)
+
+
+static func compute_life_ratio(multiplier: float, config: RaceTypes.DegradationConfig) -> float:
+	if config == null:
+		return 1.0
+	var peak: float = config.peak_multiplier
+	var floor_mult: float = minf(config.min_multiplier, peak)
+	var total_range: float = peak - floor_mult
+	if total_range <= 0.0:
+		return 1.0
+	return clampf((multiplier - floor_mult) / total_range, 0.0, 1.0)
+
+
+static func compute_phase(life_ratio: float, config: RaceTypes.DegradationConfig) -> int:
+	var clamped_life: float = clampf(life_ratio, 0.0, 1.0)
+	if config == null:
+		return RaceTypes.TyrePhase.OPTIMAL
+	var optimal_thresh: float = clampf(config.optimal_threshold, 0.0, 1.0)
+	var cliff_thresh: float = clampf(config.cliff_threshold, 0.0, optimal_thresh)
+	if clamped_life >= optimal_thresh:
+		return RaceTypes.TyrePhase.OPTIMAL
+	if clamped_life >= cliff_thresh:
+		return RaceTypes.TyrePhase.GRADUAL
+	return RaceTypes.TyrePhase.CLIFF
 
 
 static func validate_config(config: RaceTypes.DegradationConfig) -> PackedStringArray:

@@ -20,11 +20,11 @@
       "degradation": {
         "warmup_laps": 0.3,
         "peak_multiplier": 1.0,
-        "degradation_rate": 0.04,
-        "min_multiplier": 0.7,
+        "degradation_rate": 0.025,
+        "min_multiplier": 0.72,
         "optimal_threshold": 0.75,
         "cliff_threshold": 0.3,
-        "cliff_multiplier": 3.0
+        "cliff_multiplier": 2.5
       }
     },
     {
@@ -36,7 +36,7 @@
         "min_multiplier": 0.75,
         "optimal_threshold": 0.75,
         "cliff_threshold": 0.3,
-        "cliff_multiplier": 3.0
+        "cliff_multiplier": 2.5
       }
     },
     {
@@ -44,11 +44,11 @@
       "degradation": {
         "warmup_laps": 0.8,
         "peak_multiplier": 0.976,
-        "degradation_rate": 0.01,
+        "degradation_rate": 0.012,
         "min_multiplier": 0.8,
         "optimal_threshold": 0.75,
         "cliff_threshold": 0.3,
-        "cliff_multiplier": 3.0
+        "cliff_multiplier": 2.5
       }
     }
   ],

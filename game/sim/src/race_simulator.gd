@@ -152,6 +152,8 @@ func step(dt_seconds: float) -> void:
 
 				car.fuel_multiplier = FuelModel.compute_multiplier(car.fuel_kg, _fuel_config)
 				var pit_speed: float = _pit_stop_manager.get_pit_speed(car)
+				car.reference_speed_units_per_sec = maxf(pit_speed, 0.0)
+				car.strategy_multiplier = 1.0
 				car.effective_speed_units_per_sec = maxf(pit_speed, 0.0)
 				car.is_held_up = false
 				car.held_up_by = ""
@@ -448,15 +450,21 @@ func _compute_car_speed(car: RaceTypes.CarState) -> void:
 		speed = car.base_speed_units_per_sec * pace_multiplier
 		car.current_multiplier = pace_multiplier
 
+	car.reference_speed_units_per_sec = maxf(speed, 0.001)
+
 	var degradation_inputs: Dictionary = _get_degradation_inputs(car)
+	var degradation_config: RaceTypes.DegradationConfig = degradation_inputs.get("config", null)
 	car.degradation_multiplier = DegradationModel.compute_multiplier(
 		int(degradation_inputs.get("lap_count", car.lap_count)),
 		float(degradation_inputs.get("fractional_lap", 0.0)),
-		degradation_inputs.get("config", null)
+		degradation_config
 	)
+	car.tyre_life_ratio = DegradationModel.compute_life_ratio(car.degradation_multiplier, degradation_config)
+	car.tyre_phase = DegradationModel.compute_phase(car.tyre_life_ratio, degradation_config)
 	speed *= car.degradation_multiplier
 
 	car.fuel_multiplier = FuelModel.compute_multiplier(car.fuel_kg, _fuel_config)
+	car.strategy_multiplier = car.degradation_multiplier * car.fuel_multiplier
 	speed *= car.fuel_multiplier
 
 	speed = maxf(speed, 0.001)

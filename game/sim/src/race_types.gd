@@ -15,6 +15,12 @@ enum PitPhase {
 	EXIT = 3
 }
 
+enum TyrePhase {
+	OPTIMAL = 0,
+	GRADUAL = 1,
+	CLIFF = 2
+}
+
 
 class PaceSegmentConfig extends RefCounted:
 	var start_distance: float = 0.0
@@ -296,7 +302,9 @@ class CarState extends RefCounted:
 	var display_name: String = ""
 	var base_speed_units_per_sec: float = 0.0
 	var v_ref: float = 0.0
+	var reference_speed_units_per_sec: float = 0.0
 	var current_multiplier: float = 1.0
+	var strategy_multiplier: float = 1.0
 	var effective_speed_units_per_sec: float = 0.0
 	var distance_along_track: float = 0.0
 	var total_distance: float = 0.0
@@ -309,6 +317,8 @@ class CarState extends RefCounted:
 	var finish_position: int = 0
 	var finish_time: float = -1.0
 	var degradation_multiplier: float = 1.0
+	var tyre_life_ratio: float = 1.0
+	var tyre_phase: int = TyrePhase.OPTIMAL
 	var current_compound: String = "medium"
 	var stint_lap_count: int = 0
 	var stint_number: int = 1
@@ -325,6 +335,8 @@ class CarState extends RefCounted:
 
 	func reset_runtime_state() -> void:
 		current_multiplier = 1.0
+		reference_speed_units_per_sec = base_speed_units_per_sec if base_speed_units_per_sec > 0.0 else v_ref
+		strategy_multiplier = 1.0
 		effective_speed_units_per_sec = base_speed_units_per_sec if base_speed_units_per_sec > 0.0 else v_ref
 		distance_along_track = 0.0
 		total_distance = 0.0
@@ -337,6 +349,8 @@ class CarState extends RefCounted:
 		finish_position = 0
 		finish_time = -1.0
 		degradation_multiplier = 1.0
+		tyre_life_ratio = 1.0
+		tyre_phase = TyrePhase.OPTIMAL
 		current_compound = "medium"
 		stint_lap_count = 0
 		stint_number = 1
@@ -357,7 +371,9 @@ class CarState extends RefCounted:
 		copied.display_name = display_name
 		copied.base_speed_units_per_sec = base_speed_units_per_sec
 		copied.v_ref = v_ref
+		copied.reference_speed_units_per_sec = reference_speed_units_per_sec
 		copied.current_multiplier = current_multiplier
+		copied.strategy_multiplier = strategy_multiplier
 		copied.effective_speed_units_per_sec = effective_speed_units_per_sec
 		copied.distance_along_track = distance_along_track
 		copied.total_distance = total_distance
@@ -370,6 +386,8 @@ class CarState extends RefCounted:
 		copied.finish_position = finish_position
 		copied.finish_time = finish_time
 		copied.degradation_multiplier = degradation_multiplier
+		copied.tyre_life_ratio = tyre_life_ratio
+		copied.tyre_phase = tyre_phase
 		copied.current_compound = current_compound
 		copied.stint_lap_count = stint_lap_count
 		copied.stint_number = stint_number

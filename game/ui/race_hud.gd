@@ -116,7 +116,7 @@ func render(
 			car,
 			winner_finish_time
 		)
-		row["degradation"].text = _format_degradation(car.degradation_multiplier)
+		row["degradation"].text = _format_tyre(car)
 		row["fuel"].text = _format_fuel(car.fuel_kg)
 		row["current_lap"].text = _format_time(maxf(snapshot.race_time - car.lap_start_time, 0.0))
 		row["last_lap"].text = _format_optional_time(car.last_lap_time)
@@ -292,11 +292,30 @@ func _format_speed_cell(car: RaceTypes.CarState) -> String:
 		if car.pit_phase == RaceTypes.PitPhase.STOPPED:
 			return "BOX [%.1fs]" % maxf(car.pit_time_remaining, 0.0)
 		return "IN PIT"
-	return _format_speed(car.effective_speed_units_per_sec, car.is_held_up)
+	var normalized_ratio: float = 1.0
+	if car.reference_speed_units_per_sec > 0.0:
+		normalized_ratio = car.effective_speed_units_per_sec / car.reference_speed_units_per_sec
+	var normalized_pct: int = int(round(clampf(normalized_ratio, 0.0, 2.0) * 100.0))
+	var held_up_suffix: String = " [H]" if car.is_held_up else ""
+	return "%.1f u/s | N%d%%%s" % [car.effective_speed_units_per_sec, normalized_pct, held_up_suffix]
 
 
-func _format_degradation(multiplier: float) -> String:
-	return "%d%%" % int(round(multiplier * 100.0))
+func _format_tyre(car: RaceTypes.CarState) -> String:
+	if car == null:
+		return "--"
+	var life_pct: int = int(round(clampf(car.tyre_life_ratio, 0.0, 1.0) * 100.0))
+	return "%d%% %s" % [life_pct, _format_tyre_phase(car.tyre_phase)]
+
+
+func _format_tyre_phase(phase: int) -> String:
+	match phase:
+		RaceTypes.TyrePhase.OPTIMAL:
+			return "OPTIMAL"
+		RaceTypes.TyrePhase.GRADUAL:
+			return "GRADUAL"
+		RaceTypes.TyrePhase.CLIFF:
+			return "CLIFF"
+	return "OPTIMAL"
 
 
 func _format_gap(

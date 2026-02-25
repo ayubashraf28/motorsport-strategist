@@ -87,7 +87,7 @@ text = "Gap"
 [node name="HeaderDegradation" type="Label" parent="RootMargin/Panel/MainColumn/HeaderGrid"]
 layout_mode = 2
 size_flags_horizontal = 3
-text = "Deg"
+text = "Tyre"
 
 [node name="HeaderFuel" type="Label" parent="RootMargin/Panel/MainColumn/HeaderGrid"]
 unique_name_in_owner = true
