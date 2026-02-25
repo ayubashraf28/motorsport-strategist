@@ -63,6 +63,8 @@ func process_interactions(
 		var behind: RaceTypes.CarState = cars[sorted_indices[order_index]]
 		if ahead == null or behind == null:
 			continue
+		if ahead.is_in_pit or behind.is_in_pit:
+			continue
 		if ahead.is_finished or behind.is_finished:
 			continue
 

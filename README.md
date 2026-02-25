@@ -4,9 +4,11 @@ Racing Manager prototype repository with deterministic simulation and Godot pres
 
 ## Current gameplay baseline
 
-V1.1 is now supported with two runtime modes:
-- V1 pace profile mode (`config/race_v1.json`): hand-authored pace segments.
-- V1.1 physics profile mode (`config/race_v1.1.json`): speed derived from track curvature and vehicle limits.
+V3.1 is the active baseline, with backward-compatible schema support:
+- V1 pace profile mode (`config/race_v1.json`)
+- V1.1 physics profile mode (`config/race_v1.1.json`)
+- V2 race dynamics (`config/race_v2.json`)
+- V3.1 strategy systems (`config/race_v3.json`): compounds, fuel, pit lifecycle, telemetry logging
 
 Main project entry:
 - Godot project: `game/project.godot`
@@ -23,10 +25,17 @@ Controls:
 - `R`: reset
 - `1`, `2`, `4`: simulation speed
 - `D`: debug overlay cycle
-  - V1.1: speed -> curvature -> off
+  - V1.1+ (physics): speed -> curvature -> off
   - V1: pace profile -> off
 
-## Track data pipeline (V1.1)
+Strategy interactions:
+- PIT/CANCEL actions are available from the HUD per car row when pit is enabled by config.
+
+Telemetry:
+- Session telemetry is written as JSONL files to `data/telemetry/` (ignored by git).
+- Includes lap snapshots and pit lifecycle events for offline analysis.
+
+## Track data pipeline
 
 Derived Monza geometry asset:
 - `data/tracks/monza/monza_centerline.json`

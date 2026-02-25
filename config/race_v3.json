@@ -1,0 +1,115 @@
+﻿{
+  "schema_version": "3.0",
+  "count_first_lap_from_start": true,
+  "seed": 42,
+  "default_time_scale": 1.0,
+  "total_laps": 15,
+  "track": {
+    "geometry_asset": "../data/tracks/monza/monza_centerline.json",
+    "physics": {
+      "a_lat_max": 25.0,
+      "a_long_accel": 8.0,
+      "a_long_brake": 20.0,
+      "v_top_speed": 83.0,
+      "curvature_epsilon": 0.0001
+    }
+  },
+  "compounds": [
+    {
+      "name": "soft",
+      "degradation": {
+        "warmup_laps": 0.3,
+        "peak_multiplier": 1.0,
+        "degradation_rate": 0.025,
+        "min_multiplier": 0.72,
+        "optimal_threshold": 0.75,
+        "cliff_threshold": 0.3,
+        "cliff_multiplier": 2.5
+      }
+    },
+    {
+      "name": "medium",
+      "degradation": {
+        "warmup_laps": 0.5,
+        "peak_multiplier": 0.988,
+        "degradation_rate": 0.02,
+        "min_multiplier": 0.75,
+        "optimal_threshold": 0.75,
+        "cliff_threshold": 0.3,
+        "cliff_multiplier": 2.5
+      }
+    },
+    {
+      "name": "hard",
+      "degradation": {
+        "warmup_laps": 0.8,
+        "peak_multiplier": 0.976,
+        "degradation_rate": 0.012,
+        "min_multiplier": 0.8,
+        "optimal_threshold": 0.75,
+        "cliff_threshold": 0.3,
+        "cliff_multiplier": 2.5
+      }
+    }
+  ],
+  "fuel": {
+    "enabled": true,
+    "max_capacity_kg": 110.0,
+    "consumption_per_lap_kg": 2.5,
+    "weight_penalty_factor": 0.05,
+    "fuel_empty_penalty": 0.5,
+    "refuel_rate_kg_per_sec": 2.0
+  },
+  "pit": {
+    "enabled": true,
+    "pit_entry_distance": 1950.0,
+    "pit_exit_distance": 80.0,
+    "pit_box_distance": 2.0,
+    "pit_lane_speed_limit": 20.0,
+    "base_pit_stop_duration": 3.0,
+    "min_stop_lap": 1,
+    "max_stops": 5
+  },
+  "overtaking": {
+    "enabled": true,
+    "proximity_distance": 50.0,
+    "overtake_speed_threshold": 2.0,
+    "held_up_speed_buffer": 0.1,
+    "cooldown_seconds": 3.0
+  },
+  "cars": [
+    {
+      "id": "car_01",
+      "display_name": "Red Bull",
+      "v_ref": 83.0,
+      "starting_compound": "soft",
+      "starting_fuel_kg": 100.0
+    },
+    {
+      "id": "car_02",
+      "display_name": "Ferrari",
+      "v_ref": 83.0,
+      "starting_compound": "medium",
+      "starting_fuel_kg": 110.0
+    },
+    {
+      "id": "car_03",
+      "display_name": "Mercedes",
+      "v_ref": 83.0,
+      "starting_compound": "soft",
+      "starting_fuel_kg": 90.0
+    },
+    {
+      "id": "car_04",
+      "display_name": "McLaren",
+      "v_ref": 83.0,
+      "starting_compound": "hard",
+      "starting_fuel_kg": 110.0
+    }
+  ],
+  "debug": {
+    "show_pace_profile": false,
+    "show_curvature_overlay": false,
+    "show_speed_overlay": true
+  }
+}

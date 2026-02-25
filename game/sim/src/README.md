@@ -13,6 +13,11 @@ Current modules:
 - `standings_calculator.gd`: authoritative per-step position ordering and interval math
 - `race_state_machine.gd`: lap-based race state transitions and finish order tracking
 - `degradation_model.gd`: stateless warmup/peak/degradation multiplier computation
+- `tyre_compound.gd`: compound lookup/validation utilities for compound-based degradation
+- `stint_tracker.gd`: per-car compound + stint lap tracking and stint history
+- `fuel_model.gd`: stateless fuel-weight multiplier, consumption, and refuel math
+- `pit_stop_manager.gd`: pit-entry detection and deterministic pit phase transitions
+- `pit_strategy.gd`: pending pit-request queue for manual pit commands
 - `overtaking_manager.gd`: proximity-threshold interaction and cooldown handling
 - `fixed_step_runner.gd`: deterministic accumulator helper used by presentation
 - `pace_profile.gd`: deterministic track pace profile validation and smooth sampling

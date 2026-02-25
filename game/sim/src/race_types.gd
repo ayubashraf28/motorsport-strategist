@@ -8,6 +8,19 @@ enum RaceState {
 	FINISHED = 3
 }
 
+enum PitPhase {
+	RACING = 0,
+	ENTRY = 1,
+	STOPPED = 2,
+	EXIT = 3
+}
+
+enum TyrePhase {
+	OPTIMAL = 0,
+	GRADUAL = 1,
+	CLIFF = 2
+}
+
 
 class PaceSegmentConfig extends RefCounted:
 	var start_distance: float = 0.0
@@ -100,6 +113,9 @@ class DegradationConfig extends RefCounted:
 	var peak_multiplier: float = 1.0
 	var degradation_rate: float = 0.0
 	var min_multiplier: float = 0.7
+	var optimal_threshold: float = 1.0
+	var cliff_threshold: float = 0.0
+	var cliff_multiplier: float = 1.0
 
 	func clone() -> DegradationConfig:
 		var copied := DegradationConfig.new()
@@ -107,6 +123,79 @@ class DegradationConfig extends RefCounted:
 		copied.peak_multiplier = peak_multiplier
 		copied.degradation_rate = degradation_rate
 		copied.min_multiplier = min_multiplier
+		copied.optimal_threshold = optimal_threshold
+		copied.cliff_threshold = cliff_threshold
+		copied.cliff_multiplier = cliff_multiplier
+		return copied
+
+
+class TyreCompoundConfig extends RefCounted:
+	var name: String = "medium"
+	var degradation: DegradationConfig = DegradationConfig.new()
+
+	func clone() -> TyreCompoundConfig:
+		var copied := TyreCompoundConfig.new()
+		copied.name = name
+		copied.degradation = degradation.clone() if degradation != null else DegradationConfig.new()
+		return copied
+
+
+class FuelConfig extends RefCounted:
+	var enabled: bool = true
+	var max_capacity_kg: float = 110.0
+	var consumption_per_lap_kg: float = 2.5
+	var weight_penalty_factor: float = 0.05
+	var fuel_empty_penalty: float = 0.50
+	var refuel_rate_kg_per_sec: float = 2.0
+
+	func clone() -> FuelConfig:
+		var copied := FuelConfig.new()
+		copied.enabled = enabled
+		copied.max_capacity_kg = max_capacity_kg
+		copied.consumption_per_lap_kg = consumption_per_lap_kg
+		copied.weight_penalty_factor = weight_penalty_factor
+		copied.fuel_empty_penalty = fuel_empty_penalty
+		copied.refuel_rate_kg_per_sec = refuel_rate_kg_per_sec
+		return copied
+
+
+class PitConfig extends RefCounted:
+	var enabled: bool = true
+	var pit_entry_distance: float = 0.0
+	var pit_exit_distance: float = 0.0
+	var pit_box_distance: float = -1.0
+	var pit_lane_speed_limit: float = 20.0
+	var base_pit_stop_duration: float = 3.0
+	var pit_entry_duration: float = 8.0
+	var pit_exit_duration: float = 8.0
+	var min_stop_lap: int = 1
+	var max_stops: int = 5
+
+	func clone() -> PitConfig:
+		var copied := PitConfig.new()
+		copied.enabled = enabled
+		copied.pit_entry_distance = pit_entry_distance
+		copied.pit_exit_distance = pit_exit_distance
+		copied.pit_box_distance = pit_box_distance
+		copied.pit_lane_speed_limit = pit_lane_speed_limit
+		copied.base_pit_stop_duration = base_pit_stop_duration
+		copied.pit_entry_duration = pit_entry_duration
+		copied.pit_exit_duration = pit_exit_duration
+		copied.min_stop_lap = min_stop_lap
+		copied.max_stops = max_stops
+		return copied
+
+
+class CompletedStint extends RefCounted:
+	var compound_name: String = ""
+	var laps: int = 0
+	var stint_number: int = 0
+
+	func clone() -> CompletedStint:
+		var copied := CompletedStint.new()
+		copied.compound_name = compound_name
+		copied.laps = laps
+		copied.stint_number = stint_number
 		return copied
 
 
@@ -133,6 +222,8 @@ class CarConfig extends RefCounted:
 	var base_speed_units_per_sec: float = 0.0
 	var v_ref: float = 0.0
 	var degradation: DegradationConfig = null
+	var starting_compound: String = ""
+	var starting_fuel_kg: float = -1.0
 
 	func clone() -> CarConfig:
 		var copied := CarConfig.new()
@@ -141,6 +232,8 @@ class CarConfig extends RefCounted:
 		copied.base_speed_units_per_sec = base_speed_units_per_sec
 		copied.v_ref = v_ref
 		copied.degradation = degradation.clone() if degradation != null else null
+		copied.starting_compound = starting_compound
+		copied.starting_fuel_kg = starting_fuel_kg
 		return copied
 
 
@@ -154,6 +247,9 @@ class RaceConfig extends RefCounted:
 	var seed: int = 0
 	var default_time_scale: float = 1.0
 	var degradation: DegradationConfig = null
+	var compounds: Array[TyreCompoundConfig] = []
+	var fuel: FuelConfig = null
+	var pit: PitConfig = null
 	var overtaking: OvertakingConfig = null
 
 	func is_physics_profile() -> bool:
@@ -172,6 +268,11 @@ class RaceConfig extends RefCounted:
 		copied.seed = seed
 		copied.default_time_scale = default_time_scale
 		copied.degradation = degradation.clone() if degradation != null else null
+		for compound in compounds:
+			if compound != null:
+				copied.compounds.append(compound.clone())
+		copied.fuel = fuel.clone() if fuel != null else null
+		copied.pit = pit.clone() if pit != null else null
 		copied.overtaking = overtaking.clone() if overtaking != null else null
 		for car in cars:
 			copied.cars.append(car.clone())
@@ -201,7 +302,9 @@ class CarState extends RefCounted:
 	var display_name: String = ""
 	var base_speed_units_per_sec: float = 0.0
 	var v_ref: float = 0.0
+	var reference_speed_units_per_sec: float = 0.0
 	var current_multiplier: float = 1.0
+	var strategy_multiplier: float = 1.0
 	var effective_speed_units_per_sec: float = 0.0
 	var distance_along_track: float = 0.0
 	var total_distance: float = 0.0
@@ -214,11 +317,26 @@ class CarState extends RefCounted:
 	var finish_position: int = 0
 	var finish_time: float = -1.0
 	var degradation_multiplier: float = 1.0
+	var tyre_life_ratio: float = 1.0
+	var tyre_phase: int = TyrePhase.OPTIMAL
+	var current_compound: String = "medium"
+	var stint_lap_count: int = 0
+	var stint_number: int = 1
+	var is_in_pit: bool = false
+	var pit_phase: int = PitPhase.RACING
+	var pit_time_remaining: float = 0.0
+	var pit_stops_completed: int = 0
+	var pit_target_compound: String = ""
+	var pit_target_fuel_kg: float = -1.0
+	var fuel_kg: float = 0.0
+	var fuel_multiplier: float = 1.0
 	var is_held_up: bool = false
 	var held_up_by: String = ""
 
 	func reset_runtime_state() -> void:
 		current_multiplier = 1.0
+		reference_speed_units_per_sec = base_speed_units_per_sec if base_speed_units_per_sec > 0.0 else v_ref
+		strategy_multiplier = 1.0
 		effective_speed_units_per_sec = base_speed_units_per_sec if base_speed_units_per_sec > 0.0 else v_ref
 		distance_along_track = 0.0
 		total_distance = 0.0
@@ -231,6 +349,19 @@ class CarState extends RefCounted:
 		finish_position = 0
 		finish_time = -1.0
 		degradation_multiplier = 1.0
+		tyre_life_ratio = 1.0
+		tyre_phase = TyrePhase.OPTIMAL
+		current_compound = "medium"
+		stint_lap_count = 0
+		stint_number = 1
+		is_in_pit = false
+		pit_phase = PitPhase.RACING
+		pit_time_remaining = 0.0
+		pit_stops_completed = 0
+		pit_target_compound = ""
+		pit_target_fuel_kg = -1.0
+		fuel_kg = 0.0
+		fuel_multiplier = 1.0
 		is_held_up = false
 		held_up_by = ""
 
@@ -240,7 +371,9 @@ class CarState extends RefCounted:
 		copied.display_name = display_name
 		copied.base_speed_units_per_sec = base_speed_units_per_sec
 		copied.v_ref = v_ref
+		copied.reference_speed_units_per_sec = reference_speed_units_per_sec
 		copied.current_multiplier = current_multiplier
+		copied.strategy_multiplier = strategy_multiplier
 		copied.effective_speed_units_per_sec = effective_speed_units_per_sec
 		copied.distance_along_track = distance_along_track
 		copied.total_distance = total_distance
@@ -253,6 +386,19 @@ class CarState extends RefCounted:
 		copied.finish_position = finish_position
 		copied.finish_time = finish_time
 		copied.degradation_multiplier = degradation_multiplier
+		copied.tyre_life_ratio = tyre_life_ratio
+		copied.tyre_phase = tyre_phase
+		copied.current_compound = current_compound
+		copied.stint_lap_count = stint_lap_count
+		copied.stint_number = stint_number
+		copied.is_in_pit = is_in_pit
+		copied.pit_phase = pit_phase
+		copied.pit_time_remaining = pit_time_remaining
+		copied.pit_stops_completed = pit_stops_completed
+		copied.pit_target_compound = pit_target_compound
+		copied.pit_target_fuel_kg = pit_target_fuel_kg
+		copied.fuel_kg = fuel_kg
+		copied.fuel_multiplier = fuel_multiplier
 		copied.is_held_up = is_held_up
 		copied.held_up_by = held_up_by
 		return copied
