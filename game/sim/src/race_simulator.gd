@@ -72,6 +72,7 @@ func initialize(config: RaceTypes.RaceConfig, runtime: RaceTypes.RaceRuntimePara
 		state.v_ref = car_config.v_ref if car_config.v_ref > 0.0 else car_config.base_speed_units_per_sec
 		state.reset_runtime_state()
 		_cars.append(state)
+		_car_degradation_configs[state.id] = _resolve_degradation_config_for_car(car_config, _config.degradation)
 
 	if _config.compounds.is_empty():
 		for i in range(_cars.size()):
@@ -391,6 +392,19 @@ func _validate_inputs(config: RaceTypes.RaceConfig, runtime: RaceTypes.RaceRunti
 
 	if config.is_physics_profile() and runtime.geometry == null:
 		_validation_errors.append("Track geometry runtime data is required for schema 1.1.")
+
+	var global_deg_errors: PackedStringArray = DegradationModel.validate_config(config.degradation)
+	for err in global_deg_errors:
+		_validation_errors.append("Global %s" % err)
+	if config.overtaking != null:
+		if config.overtaking.proximity_distance < 0.0:
+			_validation_errors.append("overtaking.proximity_distance must be >= 0.")
+		if config.overtaking.overtake_speed_threshold < 0.0:
+			_validation_errors.append("overtaking.overtake_speed_threshold must be >= 0.")
+		if config.overtaking.held_up_speed_buffer < 0.0:
+			_validation_errors.append("overtaking.held_up_speed_buffer must be >= 0.")
+		if config.overtaking.cooldown_seconds < 0.0:
+			_validation_errors.append("overtaking.cooldown_seconds must be >= 0.")
 
 
 func _initialize_pace_profile() -> void:

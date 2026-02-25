@@ -95,6 +95,16 @@ layout_mode = 2
 size_flags_horizontal = 3
 text = "Fuel"
 
+[node name="HeaderGap" type="Label" parent="RootMargin/Panel/MainColumn/HeaderGrid"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Gap"
+
+[node name="HeaderDegradation" type="Label" parent="RootMargin/Panel/MainColumn/HeaderGrid"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Deg"
+
 [node name="HeaderCurrentLap" type="Label" parent="RootMargin/Panel/MainColumn/HeaderGrid"]
 layout_mode = 2
 size_flags_horizontal = 3
