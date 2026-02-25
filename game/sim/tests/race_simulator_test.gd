@@ -335,7 +335,9 @@ func test_fuel_consumes_per_lap_and_multiplier_increases() -> void:
 	var start_fuel: float = start_car.fuel_kg
 	var start_multiplier: float = start_car.fuel_multiplier
 
-	simulator.step(2.1)
+	# Fuel is consumed on lap crossing, so wait for lap completion instead of
+	# relying on a fixed wall-clock step that can drift with pace multipliers.
+	_advance_until_lap_count(simulator, 1, 0.05, 400)
 	var car_after_lap: RaceTypes.CarState = simulator.get_snapshot().cars[0]
 	assert(car_after_lap.fuel_kg < start_fuel)
 	assert(car_after_lap.fuel_multiplier > start_multiplier)
