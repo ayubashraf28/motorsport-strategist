@@ -40,9 +40,10 @@ func test_entry_duration_computed_from_distance() -> void:
 
 
 func test_exit_duration_computed_from_distance() -> void:
-	var manager := _manager(_pit_config(), _fuel_config())
+	# Exit duration validation should be isolated from refuel timing.
+	var manager := _manager(_pit_config(), null)
 	var car := _car("car_1", 1, 0)
-	manager.begin_pit_entry(car, {"compound": "hard", "fuel_kg": 90.0})
+	manager.begin_pit_entry(car, {"compound": "hard", "fuel_kg": -1.0})
 	manager.process_pit_phase(car, 10.0) # entry -> stopped
 	manager.process_pit_phase(car, 3.0) # stopped -> exit
 	assert(car.pit_phase == RaceTypes.PitPhase.EXIT)
@@ -59,9 +60,10 @@ func test_position_interpolates_during_entry() -> void:
 
 
 func test_position_interpolates_during_exit() -> void:
-	var manager := _manager(_pit_config(), _fuel_config())
+	# Exit interpolation validation should be isolated from refuel timing.
+	var manager := _manager(_pit_config(), null)
 	var car := _car("car_1", 1, 0)
-	manager.begin_pit_entry(car, {"compound": "hard", "fuel_kg": 90.0})
+	manager.begin_pit_entry(car, {"compound": "hard", "fuel_kg": -1.0})
 	manager.process_pit_phase(car, 10.0) # entry -> stopped
 	manager.process_pit_phase(car, 3.0) # stopped -> exit
 	manager.process_pit_phase(car, 0.5)
