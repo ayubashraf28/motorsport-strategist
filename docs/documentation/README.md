@@ -14,3 +14,4 @@ Snapshot basis:
 - Repository: `motorsport-strategist`
 - Snapshot date: 2026-02-25
 - Working branch at documentation time: `feat/v2-race-systems`
+- Runtime baseline captured in this bundle: V3.1 (tyres/fuel/pit/telemetry)

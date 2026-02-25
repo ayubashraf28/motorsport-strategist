@@ -2,30 +2,32 @@
 
 ## 1. Executive Summary
 
-This repository is a Godot-based racing manager prototype with an authoritative deterministic simulation layer and a presentation layer.
+This repository is a Godot-based racing manager prototype with an authoritative deterministic simulation core and a presentation layer.
 
-As of `2026-02-25`, the implemented runtime baseline is effectively **V2**:
-- V1 pace-profile mode is still supported.
-- V1.1 physics-derived speed-profile mode is still supported.
-- V2 adds live standings, finite race state, degradation, overtaking, and updated HUD behavior.
+As of `2026-02-25`, the implemented runtime baseline is effectively **V3.1**:
+- V1 pace-profile mode is supported.
+- V1.1 physics-derived speed-profile mode is supported.
+- V2 systems are supported (standings, race state, overtaking, degradation).
+- V3 systems are supported (compounds, stint tracking, fuel, pit stops, strategy requests).
+- V3.1 updates are present (continuous tyre curve behavior, pit lane distance movement, richer HUD telemetry semantics).
 
-The simulation core is in `game/sim/src`, remains `Node`-free, and is driven via fixed-step updates from `game/scripts/race_controller.gd`.
+The simulation core remains in `game/sim/src`, has no `Node` dependency, and is driven by fixed-step updates from `game/scripts/race_controller.gd`.
 
 ## 2. Repository Snapshot
 
 Top-level layout:
-- `config/`: versioned runtime configs (`race_v0.json`, `race_v1.json`, `race_v1.1.json`, `race_v2.json`)
-- `data/`: derived runtime assets (`data/tracks/monza/monza_centerline.json`)
+- `config/`: versioned runtime configs (`race_v0.json`, `race_v1.json`, `race_v1.1.json`, `race_v2.json`, `race_v3.json`)
+- `data/`: track assets and runtime data folders (`data/tracks/`, ignored `data/telemetry/`)
 - `docs/`: architecture docs, ADRs, plans, and this documentation bundle
 - `game/`: Godot project (runtime scripts, scenes, UI, sim code/tests)
 - `sim/`: future extraction boundary for engine-agnostic simulation packages
 - `tools/`: CI and helper scripts
 
 Current repo metrics:
-- Total files: `126`
-- Simulation source modules (`game/sim/src`): `10`
-- Simulation test suites (`game/sim/tests`): `9`
-- Runtime presentation scripts (`game/scripts`): `8`
+- Total files: `153`
+- Simulation source modules (`game/sim/src`): `15`
+- Simulation test suites (`game/sim/tests`): `15`
+- Runtime presentation scripts (`game/scripts`): `9`
 
 ## 3. Technology Stack
 
@@ -35,23 +37,25 @@ Current repo metrics:
 - Utility scripting: Python 3 stdlib (`tools/scripts/import_track.py`)
 - CI/CD: GitHub Actions
 
-No external package manager dependencies are currently used for sim runtime logic.
+No external package manager dependencies are currently used for simulation runtime logic.
 
 ## 4. Delivery History (What Has Been Done)
 
-Recent delivery milestones from git history:
-- `a88fdea` (`2026-02-24`): repository bootstrap
-- `a8b4e7d` (`2026-02-24`): migration to `main` and environment-based delivery flow
-- `44eb991` (`2026-02-24`): CI hardening, artifact naming, RC tag policy
-- `e88c790` (`2026-02-24`): production-ready structure baseline
-- `9d1bd43` (`2026-02-24`): V1.1 physics-derived speed profile implementation
-- `c5374c5` (`2026-02-24`): V2 race systems + HUD implementation
+Recent milestones from git history:
+- `9d1bd43` (`2026-02-24`): V1.1 physics-derived speed profile
+- `c5374c5` (`2026-02-24`): V2 race systems + HUD
+- `740090e` (`2026-02-25`): V3 foundations (degradation/fuel related expansion)
+- `bfdec88` (`2026-02-25`): V3.1 tyre realism + HUD pace telemetry updates
+- `5482114` (`2026-02-25`): lap snapshot telemetry logger writing to repo data folder
+- `2299432` (`2026-02-25`): richer telemetry events for pit/request lifecycle + normalized v_ref in V3 config
 
 Feature progression implemented:
-- **V0**: deterministic lap timing and basic race visualization (constant speeds)
+- **V0**: deterministic lap timing and basic race visualization
 - **V1**: pace segments with smoothing across boundaries
-- **V1.1**: curvature-based physics speed profile and real track asset pipeline
-- **V2**: standings, race end state machine, degradation model, overtaking manager, richer HUD
+- **V1.1**: curvature-based physics speed profile and track asset pipeline
+- **V2**: standings, finite race flow, degradation, overtaking, richer HUD
+- **V3**: tyre compounds, stint tracking, fuel model, pit stop lifecycle, pit strategy requests
+- **V3.1**: continuous degradation curve behavior, pit lane distance interpolation, normalized HUD pace telemetry, telemetry logging
 
 ## 5. Runtime Architecture
 
@@ -67,109 +71,100 @@ Presentation layer (`game/scripts`, `game/scenes`, `game/ui`):
 - Drives fixed-step loop
 - Maps simulation distances to world coordinates
 - Renders HUD and debug overlays
+- Emits telemetry logs for offline analysis
 
 ### 5.2 Main Runtime Flow
 
-1. `race_controller.gd` loads config using `RaceConfigLoader`.
-2. Loader checks config files in order:
+1. `race_controller.gd` loads config via `RaceConfigLoader`.
+2. Loader checks configs in this order:
+   - `config/race_v3.json`
    - `config/race_v2.json`
    - `config/race_v1.1.json`
    - `config/race_v1.json`
-3. Track initialization:
+3. Track init:
    - V1 path: `TrackPath` curve sampling
-   - V1.1/V2 path: `TrackLoader` reads geometry JSON and provides polyline + typed geometry
-4. Simulator initialization:
+   - V1.1/V2/V3 path: `TrackLoader` reads geometry JSON
+4. Simulator init:
    - `RaceSimulator.initialize(config, runtime_params)`
 5. Frame loop:
    - `FixedStepRunner.advance(delta, time_scale, simulator.step)`
-6. `RaceSimulator.step` processes chunks (up to `1/120s` integration chunks) in four phases:
-   - Compute natural speeds
-   - Resolve overtaking interactions (if enabled)
-   - Apply movement and lap crossings
+6. `RaceSimulator.step` processes chunks (up to `1/120s` chunk size):
+   - Compute natural speeds (including degradation/fuel/pit handling)
+   - Resolve overtaking interactions
+   - Apply movement and lap-crossing updates
    - Update standings
-7. Controller pulls snapshot and updates car dots + HUD.
+7. Controller updates car dots + HUD and passes snapshots to lap logger.
 
 ### 5.3 Determinism Controls
 
 - Fixed step: `1/120` seconds
 - Max steps per frame: `16` (spiral-of-death guard)
 - Internal integration chunking for large `dt`
-- Analytic lap crossing timestamps for stable lap-time math
-- Standings based on `total_distance` (not wrapped lap-local distance)
+- Analytic lap-crossing timestamps
+- Standings based on `total_distance`
 
 ## 6. Core Modules
 
 ### 6.1 Data and Types (`race_types.gd`)
 
 Defines:
-- Config types: `RaceConfig`, `CarConfig`, `PaceProfileConfig`, `SpeedProfileConfig`, `PhysicsVehicleConfig`, `DegradationConfig`, `OvertakingConfig`, `DebugConfig`
-- Runtime types: `RaceRuntimeParams`, `CarState`, `RaceSnapshot`
-- Race state enum: `NOT_STARTED`, `RUNNING`, `FINISHING`, `FINISHED`
+- Config types: `RaceConfig`, `CarConfig`, `PaceProfileConfig`, `SpeedProfileConfig`, `PhysicsVehicleConfig`, `DegradationConfig`, `TyreCompoundConfig`, `FuelConfig`, `PitConfig`, `OvertakingConfig`, `DebugConfig`
+- Runtime types: `RaceRuntimeParams`, `CarState`, `RaceSnapshot`, `CompletedStint`
+- Enums: `RaceState`, `PitPhase`, `TyrePhase`
 
-Key V2 runtime fields in `CarState`:
-- Positioning: `position`, `total_distance`
-- Finish state: `is_finished`, `finish_position`, `finish_time`
-- Performance state: `degradation_multiplier`, `is_held_up`, `held_up_by`
+Key runtime fields in `CarState` include:
+- Position/lifecycle: `position`, `total_distance`, `is_finished`, `finish_position`, `finish_time`
+- Tyre/performance telemetry: `degradation_multiplier`, `tyre_life_ratio`, `tyre_phase`, `reference_speed_units_per_sec`, `strategy_multiplier`
+- Strategy state: `current_compound`, `stint_lap_count`, `stint_number`, `is_in_pit`, `pit_phase`, `pit_time_remaining`, `pit_stops_completed`, pit targets
+- Fuel/traffic: `fuel_kg`, `fuel_multiplier`, `is_held_up`, `held_up_by`
 
 ### 6.2 Race Simulator (`race_simulator.gd`)
 
 Responsibilities:
-- Validation of config/runtime inputs
+- Input validation
 - Pace-profile or speed-profile setup
 - Per-step progression and lap crossing registration
-- Integration with standings, race state machine, degradation, overtaking
+- Integration with standings, race state machine, degradation, overtaking, compounds/stints, fuel, pit systems
 
-Important behavior:
+Key behavior:
 - V1 path: `effective_speed = base_speed * pace_multiplier`
-- V1.1/V2 path: `effective_speed = sampled_physics_speed * (v_ref / v_top_speed)`
-- Degradation then scales speed and clamps to floor `0.001`
+- V1.1+ path: `effective_speed = sampled_physics_speed * (v_ref / v_top_speed)`
+- Runtime scales by degradation and fuel multipliers
+- Pit phases override movement and speed through `PitStopManager`
 
-### 6.3 Pace Profile (`pace_profile.gd`)
+### 6.3 V3/V3.1 Race Systems
 
-- Validates segment continuity and coverage
-- Uses smoothstep blending around segment boundaries
-- Supports deterministic multiplier sampling around closed loop
+- `tyre_compound.gd`: compound lookup/validation
+- `stint_tracker.gd`: active compound, stint lap count/number, history
+- `fuel_model.gd`: consumption, refuel, mass penalty multiplier
+- `pit_strategy.gd`: pending pit request state
+- `pit_stop_manager.gd`: entry/stopped/exit phases, distance-based pit movement, wrap-safe lane interpolation
+- `degradation_model.gd`: warmup + threshold-based tyre behavior, life/phase helpers, validation
 
-### 6.4 Track Geometry and Speed Profile
+### 6.4 Telemetry Logger
 
-`track_geometry.gd`:
-- Validates geometry payloads
-- Can derive sampled curvature from synthetic polylines (test support)
+`game/scripts/lap_snapshot_logger.gd` writes JSONL telemetry to `data/telemetry` (ignored by git):
+- Session markers: `session_start`, `session_end`
+- Lap snapshots: `lap_start_snapshot`
+- Lifecycle events: `pit_request_change`, `pit_state_change`, `pit_stop_complete`, `compound_change`, `car_finished`
 
-`speed_profile.gd`:
-- Builds `v_corner` from curvature and lateral acceleration
-- Applies forward acceleration and backward braking constraints
-- Produces sampled speed array with interpolation support
-
-### 6.5 V2 Race Systems
-
-`standings_calculator.gd`:
-- Assigns 1-based race positions by descending `total_distance`
-- Computes interval-to-car-ahead distances
-
-`race_state_machine.gd`:
-- Handles race lifecycle and finish order
-- Supports unlimited (`total_laps <= 0`) and finite race lengths
-
-`degradation_model.gd`:
-- Stateless warmup/peak/degrade multiplier model
-- Config validation for range constraints
-
-`overtaking_manager.gd`:
-- Proximity + threshold-based interaction model
-- Held-up behavior and per-pair cooldown system
+Payload includes per-car race, tyre, fuel, pit, pace, and timing fields for offline analysis.
 
 ## 7. Config and Schema Support
 
 Supported schemas:
-- `"1.0"` or missing `schema_version`: V1 pace profile
+- `"1.0"` or missing: V1 pace profile
 - `"1.1"`: physics speed profile
-- `"2.0"`: V1.1 + race end, degradation, overtaking
+- `"2.0"`: V1.1 + race end/degradation/overtaking
+- `"3.0"`: V2 + compounds/fuel/pit strategy systems
 
-Config routing currently defaults to V2-first loading.
+Current runtime defaults to V3 first due loader order.
 
-Note:
-- `config/race_v0.json` still exists, but loader fallback does not include it.
+V3-specific config currently includes:
+- `compounds[]` with degradation parameters (`peak`, `rate`, `min`, thresholds)
+- `fuel` model config
+- `pit` config with pit entry/exit/box distances and stop behavior
+- Per-car `starting_compound` and `starting_fuel_kg`
 
 ## 8. Track Data Pipeline
 
@@ -181,7 +176,7 @@ Pipeline:
 - Input (not committed): `Monza_raw.csv`
 - Output (committed): `data/tracks/monza/monza_centerline.json`
 
-Current committed Monza asset metadata:
+Committed Monza asset metadata:
 - `import_script_version`: `1.0`
 - `sample_count`: `507`
 - `sample_interval_units`: `3.9950794939321073`
@@ -193,81 +188,79 @@ Main scene:
 - `game/scenes/main.tscn`
 
 HUD (`game/ui/race_hud.gd` + `.tscn`):
-- Columns: `P`, `Car ID`, `Speed`, `Laps`, `Gap`, `Deg`, `Current Lap`, `Last Lap`, `Best Lap`
-- Shows race status (`Running`, `Finishing...`, `Race Over`)
-- Handles Pause, Reset, and speed selection (`1x`, `2x`, `4x`)
-- Displays held-up indicator in speed cell (`[H]`)
-- Displays finish deltas for completed cars
+- Columns: `P`, `ID`, `Compound`, `Speed`, `Lap Count`, `Stint`, `Gap`, `Tyre`, `Fuel`, `Current Lap`, `Last Lap`, `Best Lap`
+- Speed cell includes normalized pace view (`xx.x u/s | Nyy%`)
+- Tyre cell shows life+phase (`NN% OPTIMAL/GRADUAL/CLIFF`)
+- Supports pit strategy actions (`PIT` / `CANCEL`)
+- Includes pause/reset/speed controls
 
 Debug overlays:
 - Pace overlay (V1)
-- Curvature overlay (V1.1/V2)
-- Speed profile overlay (V1.1/V2)
+- Curvature overlay (V1.1+)
+- Speed profile overlay (V1.1+)
 - Toggle key: `D`
 
 ## 10. Testing and Validation
 
 ### 10.1 Implemented Test Coverage
 
-Test suites under `game/sim/tests` cover:
+Test suites in `game/sim/tests` now cover:
 - Fixed-step determinism and cap behavior
-- Race simulator lap timing/crossings/reset/validation
-- Pace profile validation and smoothing continuity
+- Simulator lap timing/crossings/reset/validation
+- Pace profile validation/smoothing
 - Standings and interval math
 - Race state transitions and finish sequencing
-- Degradation math and validation
-- Overtaking interactions, trains, cooldown logic
-- Track geometry curvature validity
-- Physics speed profile correctness/determinism
+- Degradation behavior and validation
+- Overtaking interactions and cooldowns
+- Tyre compound resolution/validation
+- Stint tracker behavior
+- Fuel model behavior
+- Pit strategy request lifecycle
+- Pit stop manager movement/lifecycle
+- Telemetry logger event/snapshot behavior
+- Track geometry and speed profile correctness
 
 ### 10.2 CI Validation
 
 `PR Checks / guardrails` workflow executes:
 - Lint script (`tools/ci/lint.sh`): merge-marker detection
-- Test script (`tools/ci/test.sh`): baseline checks, external sim runners if present
-- GdUnit4 simulation tests in headless Godot (`res://sim/tests`)
+- Test script (`tools/ci/test.sh`): baseline checks, external runners if present
+- Headless GdUnit suites (`res://sim/tests`)
 - Build sanity script (`tools/ci/build_sanity.sh`)
 
 ### 10.3 Local Validation Notes
 
-In this environment, `bash` is unavailable, so shell scripts could not run directly via `bash`.
-Equivalent baseline checks were run in PowerShell:
-- Merge-marker scan: pass
-- Required directories (`sim`, `game`, `tools`): pass
-- Local sim runner detection: no local Python/Node sim runner configured (GdUnit runs in CI)
+In this environment, `bash` and `godot` CLI are not consistently available, so full local CI parity is limited from PowerShell-only runs.
 
 ## 11. CI/CD and Release Automation
 
 Workflows:
 - `pr-checks.yml`: required guardrails on PRs to `main`
-- `build-main.yml`: artifacts for `main` pushes / manual dispatch (dev environment)
-- `release-candidate.yml`: UAT prereleases for tags matching `rc-vX.Y.Z-N`
-- `release.yml`: production releases for tags matching `v*`
+- `build-main.yml`: artifacts for `main` pushes/manual dispatch
+- `release-candidate.yml`: prereleases for `rc-vX.Y.Z-N`
+- `release.yml`: production releases for `vX.Y.Z`
 
-Artifact strategy:
-- Source snapshot zip artifacts generated with metadata
-- Retention: 14 days (dev), 30 days (RC), 90 days (prod)
+## 12. Documentation Inventory
 
-## 12. Documentation Inventory Already Delivered
-
-Existing docs already in repo:
-- Architecture: v0, v1, v1.1 docs
-- ADRs: v0 placement, v1 smoothing, v1.1 physics profile
-- Plans: v1.1 and v2 implementation plans
-- Contributing, folder-level ownership READMEs
+Existing docs in repo:
+- Architecture docs (V0, V1, V1.1)
+- ADRs for major technical decisions
+- Implementation plans (`docs/plans/`)
+- Contributing and folder-level ownership READMEs
+- This current-state documentation bundle
 
 ## 13. Current Technical Risks and Gaps
 
-1. Root `README.md` still describes V1.1 as baseline and should be updated to reflect V2-first runtime.
-2. `CODEOWNERS` is placeholder-only; ownership enforcement is not configured in practice.
-3. Local test scripts assume `bash`; Windows-only developer environments need PowerShell equivalents or documented prerequisites.
-4. CI linting is minimal (merge-marker scan only), with no static analysis/type/style gates yet.
-5. No tags currently exist in the repository (`git tag --list` empty), despite release workflow readiness.
+1. Documentation drift remains a risk as schema and telemetry evolve quickly; cross-file updates must stay synchronized.
+2. `CODEOWNERS` remains placeholder-only.
+3. Local tooling friction remains for Windows-first environments without a standardized local test runner path.
+4. Telemetry is rich but currently JSONL-only; no in-repo parser/report tooling is provided yet.
+5. Snapshot-level analytics should treat pit laps and asynchronous lap-start timestamps carefully to avoid misclassification.
 
 ## 14. Handoff Checklist for New Engineers
 
 1. Read this file and `current-state-business.md`.
-2. Read `docs/architecture/` and `docs/adr/` in order.
-3. Start runtime from `game/project.godot` -> `res://scenes/main.tscn`.
-4. Start with `config/race_v2.json`; then test fallback configs (`v1.1`, `v1`).
-5. Use `game/sim/src` as authoritative behavior source; keep presentation logic in `game/scripts` and `game/ui`.
+2. Start runtime from `game/project.godot` -> `res://scenes/main.tscn`.
+3. Start with `config/race_v3.json`; then verify fallback configs (`v2`, `v1.1`, `v1`).
+4. Use `game/sim/src` as authoritative behavior source.
+5. Use telemetry files in `data/telemetry/` for race behavior analysis (files are git-ignored by default).
