@@ -35,6 +35,12 @@ static func load_race_config(paths: PackedStringArray = PackedStringArray()) -> 
 	return parse_result
 
 
+static func load_race_config_from_text(json_text: String, source_path: String = "") -> Dictionary:
+	var parse_result: Dictionary = _parse_config_json(json_text, source_path)
+	parse_result["source_path"] = source_path
+	return parse_result
+
+
 static func _read_first_existing_file(candidate_paths: PackedStringArray) -> Dictionary:
 	var errors: PackedStringArray = PackedStringArray()
 	for path in candidate_paths:
@@ -78,7 +84,7 @@ static func _parse_config_json(content: String, source_path: String = "") -> Dic
 	config.schema_version = schema_version
 
 	_parse_common_fields(root, config, errors)
-	if schema_version == "3.0":
+	if schema_version == "3.0" or schema_version == "4.0":
 		_parse_v3_config(root, config, errors, source_path)
 	elif schema_version == "2.0":
 		_parse_v2_config(root, config, errors)
@@ -101,7 +107,7 @@ static func _parse_schema_version(root: Dictionary, errors: PackedStringArray) -
 	var schema_version: String = String(schema_raw).strip_edges()
 	if schema_version.is_empty():
 		return "1.0"
-	if schema_version != "1.0" and schema_version != "1.1" and schema_version != "2.0" and schema_version != "3.0":
+	if schema_version != "1.0" and schema_version != "1.1" and schema_version != "2.0" and schema_version != "3.0" and schema_version != "4.0":
 		errors.append("Unsupported schema_version '%s'." % schema_version)
 		return "1.0"
 	return schema_version
@@ -272,6 +278,12 @@ static func _parse_v3_config(
 	if typeof(cars_raw) == TYPE_ARRAY:
 		var cars_array: Array = cars_raw
 		_apply_v3_car_overrides(cars_array, config.cars, errors)
+
+	var drs_raw: Variant = root.get("drs", {})
+	if typeof(drs_raw) == TYPE_DICTIONARY:
+		config.drs = drs_raw
+	elif drs_raw != null:
+		errors.append("drs must be an object when provided.")
 
 	_validate_pit_distances_against_track_length(config, source_path, errors)
 

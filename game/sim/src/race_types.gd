@@ -251,6 +251,7 @@ class RaceConfig extends RefCounted:
 	var fuel: FuelConfig = null
 	var pit: PitConfig = null
 	var overtaking: OvertakingConfig = null
+	var drs: Dictionary = {}  # Raw DRS config dictionary, passed to DrsSystem
 
 	func is_physics_profile() -> bool:
 		return track is SpeedProfileConfig
@@ -274,6 +275,7 @@ class RaceConfig extends RefCounted:
 		copied.fuel = fuel.clone() if fuel != null else null
 		copied.pit = pit.clone() if pit != null else null
 		copied.overtaking = overtaking.clone() if overtaking != null else null
+		copied.drs = drs.duplicate(true)
 		for car in cars:
 			copied.cars.append(car.clone())
 		return copied
@@ -332,6 +334,9 @@ class CarState extends RefCounted:
 	var fuel_multiplier: float = 1.0
 	var is_held_up: bool = false
 	var held_up_by: String = ""
+	var driver_mode: int = 1  # DriverMode.STANDARD
+	var drs_active: bool = false
+	var drs_eligible: bool = false
 
 	func reset_runtime_state() -> void:
 		current_multiplier = 1.0
@@ -364,6 +369,9 @@ class CarState extends RefCounted:
 		fuel_multiplier = 1.0
 		is_held_up = false
 		held_up_by = ""
+		driver_mode = 1
+		drs_active = false
+		drs_eligible = false
 
 	func clone() -> CarState:
 		var copied := CarState.new()
@@ -401,6 +409,9 @@ class CarState extends RefCounted:
 		copied.fuel_multiplier = fuel_multiplier
 		copied.is_held_up = is_held_up
 		copied.held_up_by = held_up_by
+		copied.driver_mode = driver_mode
+		copied.drs_active = drs_active
+		copied.drs_eligible = drs_eligible
 		return copied
 
 

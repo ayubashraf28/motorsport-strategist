@@ -12,6 +12,6 @@ Documents:
 
 Snapshot basis:
 - Repository: `motorsport-strategist`
-- Snapshot date: 2026-02-25
+- Snapshot date: 2026-02-26
 - Working branch at documentation time: `feat/v2-race-systems`
-- Runtime baseline captured in this bundle: V3.1 (tyres/fuel/pit/telemetry)
+- Runtime baseline captured in this bundle: V3.2 (game flow, F1-style HUD, track auto-fit, AI strategy, multi-track)

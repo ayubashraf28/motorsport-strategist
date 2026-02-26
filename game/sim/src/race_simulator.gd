@@ -13,6 +13,8 @@ const StintTracker = preload("res://sim/src/stint_tracker.gd")
 const FuelModel = preload("res://sim/src/fuel_model.gd")
 const PitStopManager = preload("res://sim/src/pit_stop_manager.gd")
 const PitStrategy = preload("res://sim/src/pit_strategy.gd")
+const DriverModeModule = preload("res://sim/src/driver_mode.gd")
+const DrsSystemModule = preload("res://sim/src/drs_system.gd")
 
 const _INTERNAL_INTEGRATION_STEP: float = 1.0 / 120.0
 const _LAP_CROSS_EPSILON: float = 0.000001
@@ -33,6 +35,7 @@ var _stint_tracker: StintTracker = null
 var _fuel_config: RaceTypes.FuelConfig = null
 var _pit_stop_manager: PitStopManager = PitStopManager.new()
 var _pit_strategy: PitStrategy = PitStrategy.new()
+var _drs_system: DrsSystemModule = DrsSystemModule.new()
 
 
 func initialize(config: RaceTypes.RaceConfig, runtime: RaceTypes.RaceRuntimeParams) -> void:
@@ -89,6 +92,8 @@ func initialize(config: RaceTypes.RaceConfig, runtime: RaceTypes.RaceRuntimePara
 
 	_race_state_machine.configure(_config.total_laps, _cars.size())
 	_overtaking_manager.configure(_config.overtaking)
+	_drs_system = DrsSystemModule.new()
+	_drs_system.configure(_config.drs, _runtime.track_length)
 	_is_ready = true
 	reset()
 
@@ -105,6 +110,8 @@ func reset() -> void:
 		_pit_stop_manager.reset()
 	if _pit_strategy != null:
 		_pit_strategy.reset()
+	if _drs_system != null:
+		_drs_system.reset()
 
 	for index in range(_cars.size()):
 		var car: RaceTypes.CarState = _cars[index]
@@ -126,6 +133,10 @@ func step(dt_seconds: float) -> void:
 		var chunk_dt: float = minf(remaining_dt, _INTERNAL_INTEGRATION_STEP)
 		var chunk_start_time: float = _race_time
 		var pit_processed_ids: Dictionary = {}
+
+		# Phase 0: evaluate DRS detection points.
+		if _drs_system != null and _drs_system.is_configured():
+			_drs_system.evaluate_detections(_cars, _runtime.track_length)
 
 		# Phase 1: compute each car's natural speed.
 		for car in _cars:
@@ -276,6 +287,32 @@ func cancel_pit_stop(car_id: String) -> void:
 	if _pit_strategy == null:
 		return
 	_pit_strategy.cancel_pit_stop(car_id)
+
+
+func set_driver_mode(car_id: String, mode: int) -> void:
+	if not DriverModeModule.is_valid_mode(mode):
+		return
+	var car: RaceTypes.CarState = _find_car_state(car_id)
+	if car == null or car.is_finished:
+		return
+	car.driver_mode = mode
+
+
+func get_driver_mode(car_id: String) -> int:
+	var car: RaceTypes.CarState = _find_car_state(car_id)
+	if car == null:
+		return DriverModeModule.Mode.STANDARD
+	return car.driver_mode
+
+
+func is_drs_enabled() -> bool:
+	return _drs_system != null and _drs_system.is_configured()
+
+
+func get_drs_zones() -> Array:
+	if _drs_system == null:
+		return []
+	return _drs_system.get_zones()
 
 
 func get_next_compound_for_car(car_id: String) -> String:
@@ -466,8 +503,17 @@ func _compute_car_speed(car: RaceTypes.CarState) -> void:
 	speed *= car.degradation_multiplier
 
 	car.fuel_multiplier = FuelModel.compute_multiplier(car.fuel_kg, _fuel_config)
-	car.strategy_multiplier = car.degradation_multiplier * car.fuel_multiplier
 	speed *= car.fuel_multiplier
+
+	var mode_pace: float = DriverModeModule.get_pace_multiplier(car.driver_mode)
+	speed *= mode_pace
+
+	var drs_mult: float = 1.0
+	if _drs_system != null:
+		drs_mult = _drs_system.get_drs_multiplier(car)
+	speed *= drs_mult
+
+	car.strategy_multiplier = car.degradation_multiplier * car.fuel_multiplier * mode_pace * drs_mult
 
 	speed = maxf(speed, 0.001)
 	car.effective_speed_units_per_sec = speed
@@ -555,7 +601,9 @@ func _register_lap_crossing(car: RaceTypes.CarState, crossing_time: float) -> vo
 		_sync_stint_fields(car)
 
 	if _fuel_config != null:
-		car.fuel_kg = FuelModel.consume_fuel(car.fuel_kg, _fuel_config.consumption_per_lap_kg)
+		var fuel_scale: float = DriverModeModule.get_fuel_consumption_scale(car.driver_mode)
+		var consumption: float = _fuel_config.consumption_per_lap_kg * fuel_scale
+		car.fuel_kg = FuelModel.consume_fuel(car.fuel_kg, consumption)
 		car.fuel_multiplier = FuelModel.compute_multiplier(car.fuel_kg, _fuel_config)
 
 	if _race_state_machine != null:
@@ -620,19 +668,32 @@ func _sync_stint_fields(car: RaceTypes.CarState) -> void:
 
 func _get_degradation_inputs(car: RaceTypes.CarState) -> Dictionary:
 	var fractional_lap: float = car.distance_along_track / _runtime.track_length if _runtime.track_length > 0.0 else 0.0
+	var base_config: RaceTypes.DegradationConfig = null
+	var lap_count: int = car.lap_count
+
 	if _stint_tracker != null:
 		_sync_stint_fields(car)
-		return {
-			"lap_count": _stint_tracker.get_stint_lap_count(car.id),
-			"fractional_lap": fractional_lap,
-			"config": _stint_tracker.get_degradation_config(car.id)
-		}
+		lap_count = _stint_tracker.get_stint_lap_count(car.id)
+		base_config = _stint_tracker.get_degradation_config(car.id)
+	else:
+		base_config = _car_degradation_configs.get(car.id, null) as RaceTypes.DegradationConfig
+
+	var deg_scale: float = DriverModeModule.get_deg_rate_scale(car.driver_mode)
+	var config: RaceTypes.DegradationConfig = _apply_deg_rate_scale(base_config, deg_scale)
 
 	return {
-		"lap_count": car.lap_count,
+		"lap_count": lap_count,
 		"fractional_lap": fractional_lap,
-		"config": _car_degradation_configs.get(car.id, null)
+		"config": config
 	}
+
+
+func _apply_deg_rate_scale(config: RaceTypes.DegradationConfig, scale: float) -> RaceTypes.DegradationConfig:
+	if config == null or absf(scale - 1.0) < 0.0001:
+		return config
+	var scaled := config.clone()
+	scaled.degradation_rate = config.degradation_rate * scale
+	return scaled
 
 
 func _find_car_state(car_id: String) -> RaceTypes.CarState:
