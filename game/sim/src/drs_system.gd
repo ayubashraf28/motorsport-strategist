@@ -108,10 +108,11 @@ func evaluate_detections(cars: Array[RaceTypes.CarState], track_length: float) -
 			var zone_start: float = float(zone["zone_start"])
 			var zone_end: float = float(zone["zone_end"])
 
-			# Check if car is near a detection point
-			if _is_near_distance(car.distance_along_track, detection_dist, 2.0, track_length):
+			# Evaluate detection when the trailing car reaches the point, or when the
+			# car ahead is at detection and the trailing gap is still in threshold.
+			if _should_evaluate_detection_for_car(car, car_ahead, detection_dist, track_length):
 				if car_ahead != null and not car_ahead.is_in_pit:
-					var gap: float = _compute_track_gap(car_ahead, car, track_length)
+					var gap: float = _compute_track_gap(car_ahead, car)
 					if gap > 0.0 and gap <= _detection_threshold:
 						_car_drs_eligible[car.id] = true
 						_car_last_detection_zone[car.id] = zone_idx
@@ -129,7 +130,7 @@ func evaluate_detections(cars: Array[RaceTypes.CarState], track_length: float) -
 			if bool(_car_drs_eligible.get(car.id, false)):
 				var eligible_zone: int = _car_last_detection_zone.get(car.id, -1)
 				if eligible_zone == zone_idx:
-					if _is_in_zone(car.distance_along_track, zone_start, zone_end, track_length):
+					if _is_in_zone(car.distance_along_track, zone_start, zone_end):
 						car.drs_active = true
 						car.drs_eligible = true
 
@@ -157,7 +158,7 @@ func get_detection_threshold() -> float:
 
 # --- Internal Helpers ---
 
-func _compute_track_gap(ahead: RaceTypes.CarState, behind: RaceTypes.CarState, track_length: float) -> float:
+func _compute_track_gap(ahead: RaceTypes.CarState, behind: RaceTypes.CarState) -> float:
 	# Gap in track distance (handles lapping)
 	return ahead.total_distance - behind.total_distance
 
@@ -169,10 +170,26 @@ func _is_near_distance(car_distance: float, target_distance: float, tolerance: f
 	return diff <= tolerance
 
 
-func _is_in_zone(car_distance: float, zone_start: float, zone_end: float, track_length: float) -> bool:
+func _is_in_zone(car_distance: float, zone_start: float, zone_end: float) -> bool:
 	if zone_start < zone_end:
 		# Normal zone (doesn't wrap)
 		return car_distance >= zone_start and car_distance <= zone_end
 	else:
 		# Wrapping zone (crosses start/finish line)
 		return car_distance >= zone_start or car_distance <= zone_end
+
+
+func _should_evaluate_detection_for_car(
+	car: RaceTypes.CarState,
+	car_ahead: RaceTypes.CarState,
+	detection_dist: float,
+	track_length: float
+) -> bool:
+	if _is_near_distance(car.distance_along_track, detection_dist, 2.0, track_length):
+		return true
+	if car_ahead == null:
+		return false
+	if not _is_near_distance(car_ahead.distance_along_track, detection_dist, 2.0, track_length):
+		return false
+	var gap: float = _compute_track_gap(car_ahead, car)
+	return gap > 0.0
