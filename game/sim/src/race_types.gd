@@ -21,6 +21,13 @@ enum TyrePhase {
 	CLIFF = 2
 }
 
+enum SafetyCarPhase {
+	GREEN = 0,
+	SC_DEPLOYED = 1,
+	SC_ENDING = 2,
+	VSC = 3
+}
+
 
 class PaceSegmentConfig extends RefCounted:
 	var start_distance: float = 0.0
@@ -216,6 +223,41 @@ class OvertakingConfig extends RefCounted:
 		return copied
 
 
+class SafetyCarConfig extends RefCounted:
+	var enabled: bool = false
+	var trigger_probability_per_lap: float = 0.05
+	var max_events: int = 2
+	var min_lap: int = 2
+	var cooldown_laps: int = 2
+	var sc_laps_min: int = 3
+	var sc_laps_max: int = 5
+	var vsc_laps_min: int = 2
+	var vsc_laps_max: int = 3
+	var vsc_probability: float = 0.45
+	var sc_speed_cap: float = 25.0
+	var sc_leader_pace_ratio: float = 0.90
+	var vsc_speed_multiplier: float = 0.60
+	var restart_drs_lock_laps: int = 2
+
+	func clone() -> SafetyCarConfig:
+		var copied := SafetyCarConfig.new()
+		copied.enabled = enabled
+		copied.trigger_probability_per_lap = trigger_probability_per_lap
+		copied.max_events = max_events
+		copied.min_lap = min_lap
+		copied.cooldown_laps = cooldown_laps
+		copied.sc_laps_min = sc_laps_min
+		copied.sc_laps_max = sc_laps_max
+		copied.vsc_laps_min = vsc_laps_min
+		copied.vsc_laps_max = vsc_laps_max
+		copied.vsc_probability = vsc_probability
+		copied.sc_speed_cap = sc_speed_cap
+		copied.sc_leader_pace_ratio = sc_leader_pace_ratio
+		copied.vsc_speed_multiplier = vsc_speed_multiplier
+		copied.restart_drs_lock_laps = restart_drs_lock_laps
+		return copied
+
+
 class CarConfig extends RefCounted:
 	var id: String = ""
 	var display_name: String = ""
@@ -224,6 +266,7 @@ class CarConfig extends RefCounted:
 	var degradation: DegradationConfig = null
 	var starting_compound: String = ""
 	var starting_fuel_kg: float = -1.0
+	var team_id: String = ""
 
 	func clone() -> CarConfig:
 		var copied := CarConfig.new()
@@ -234,6 +277,7 @@ class CarConfig extends RefCounted:
 		copied.degradation = degradation.clone() if degradation != null else null
 		copied.starting_compound = starting_compound
 		copied.starting_fuel_kg = starting_fuel_kg
+		copied.team_id = team_id
 		return copied
 
 
@@ -251,6 +295,8 @@ class RaceConfig extends RefCounted:
 	var fuel: FuelConfig = null
 	var pit: PitConfig = null
 	var overtaking: OvertakingConfig = null
+	var drs: Dictionary = {}  # Raw DRS config dictionary, passed to DrsSystem
+	var safety_car: SafetyCarConfig = null
 
 	func is_physics_profile() -> bool:
 		return track is SpeedProfileConfig
@@ -274,6 +320,8 @@ class RaceConfig extends RefCounted:
 		copied.fuel = fuel.clone() if fuel != null else null
 		copied.pit = pit.clone() if pit != null else null
 		copied.overtaking = overtaking.clone() if overtaking != null else null
+		copied.drs = drs.duplicate(true)
+		copied.safety_car = safety_car.clone() if safety_car != null else null
 		for car in cars:
 			copied.cars.append(car.clone())
 		return copied
@@ -332,6 +380,12 @@ class CarState extends RefCounted:
 	var fuel_multiplier: float = 1.0
 	var is_held_up: bool = false
 	var held_up_by: String = ""
+	var driver_mode: int = 1  # DriverMode.STANDARD
+	var drs_active: bool = false
+	var drs_eligible: bool = false
+	var team_id: String = ""
+	var team_order: int = 0
+	var team_order_target: String = ""
 
 	func reset_runtime_state() -> void:
 		current_multiplier = 1.0
@@ -364,6 +418,12 @@ class CarState extends RefCounted:
 		fuel_multiplier = 1.0
 		is_held_up = false
 		held_up_by = ""
+		driver_mode = 1
+		drs_active = false
+		drs_eligible = false
+		team_id = ""
+		team_order = 0
+		team_order_target = ""
 
 	func clone() -> CarState:
 		var copied := CarState.new()
@@ -401,6 +461,12 @@ class CarState extends RefCounted:
 		copied.fuel_multiplier = fuel_multiplier
 		copied.is_held_up = is_held_up
 		copied.held_up_by = held_up_by
+		copied.driver_mode = driver_mode
+		copied.drs_active = drs_active
+		copied.drs_eligible = drs_eligible
+		copied.team_id = team_id
+		copied.team_order = team_order
+		copied.team_order_target = team_order_target
 		return copied
 
 
@@ -410,3 +476,5 @@ class RaceSnapshot extends RefCounted:
 	var total_laps: int = 0
 	var finish_order: Array[String] = []
 	var cars: Array[CarState] = []
+	var safety_car_phase: int = SafetyCarPhase.GREEN
+	var safety_car_laps_remaining: int = 0

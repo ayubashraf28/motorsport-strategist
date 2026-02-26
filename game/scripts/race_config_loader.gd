@@ -12,6 +12,7 @@ static func load_race_config(paths: PackedStringArray = PackedStringArray()) -> 
 	var candidate_paths: PackedStringArray = paths
 	if candidate_paths.is_empty():
 		candidate_paths = PackedStringArray([
+			ProjectSettings.globalize_path("res://../config/race_v4.json"),
 			ProjectSettings.globalize_path("res://../config/race_v3.json"),
 			ProjectSettings.globalize_path("res://../config/race_v2.json"),
 			ProjectSettings.globalize_path("res://../config/race_v1.1.json"),
@@ -32,6 +33,12 @@ static func load_race_config(paths: PackedStringArray = PackedStringArray()) -> 
 		load_result.get("path", "")
 	)
 	parse_result["source_path"] = load_result.get("path", "")
+	return parse_result
+
+
+static func load_race_config_from_text(json_text: String, source_path: String = "") -> Dictionary:
+	var parse_result: Dictionary = _parse_config_json(json_text, source_path)
+	parse_result["source_path"] = source_path
 	return parse_result
 
 
@@ -78,7 +85,7 @@ static func _parse_config_json(content: String, source_path: String = "") -> Dic
 	config.schema_version = schema_version
 
 	_parse_common_fields(root, config, errors)
-	if schema_version == "3.0":
+	if schema_version == "3.0" or schema_version == "4.0":
 		_parse_v3_config(root, config, errors, source_path)
 	elif schema_version == "2.0":
 		_parse_v2_config(root, config, errors)
@@ -101,7 +108,7 @@ static func _parse_schema_version(root: Dictionary, errors: PackedStringArray) -
 	var schema_version: String = String(schema_raw).strip_edges()
 	if schema_version.is_empty():
 		return "1.0"
-	if schema_version != "1.0" and schema_version != "1.1" and schema_version != "2.0" and schema_version != "3.0":
+	if schema_version != "1.0" and schema_version != "1.1" and schema_version != "2.0" and schema_version != "3.0" and schema_version != "4.0":
 		errors.append("Unsupported schema_version '%s'." % schema_version)
 		return "1.0"
 	return schema_version
@@ -272,6 +279,23 @@ static func _parse_v3_config(
 	if typeof(cars_raw) == TYPE_ARRAY:
 		var cars_array: Array = cars_raw
 		_apply_v3_car_overrides(cars_array, config.cars, errors)
+
+	var drs_raw: Variant = root.get("drs", {})
+	if typeof(drs_raw) == TYPE_DICTIONARY:
+		config.drs = drs_raw
+	elif drs_raw != null:
+		errors.append("drs must be an object when provided.")
+
+	var safety_car_raw: Variant = root.get("safety_car", null)
+	if safety_car_raw != null:
+		if typeof(safety_car_raw) != TYPE_DICTIONARY:
+			errors.append("safety_car must be an object when provided.")
+		else:
+			var safety_result: Dictionary = _parse_safety_car_config(safety_car_raw, "safety_car")
+			var safety_errors: PackedStringArray = safety_result.get("errors", PackedStringArray())
+			for safety_error in safety_errors:
+				errors.append(safety_error)
+			config.safety_car = safety_result.get("config", null)
 
 	_validate_pit_distances_against_track_length(config, source_path, errors)
 
@@ -512,6 +536,13 @@ static func _apply_v3_car_overrides(cars_raw: Array, cars: Array[RaceTypes.CarCo
 				errors.append("cars[%d].starting_fuel_kg must be numeric when provided." % index)
 			else:
 				target_car.starting_fuel_kg = float(starting_fuel_raw)
+
+		if car_dict.has("team_id"):
+			var team_id_raw: Variant = car_dict.get("team_id", "")
+			if typeof(team_id_raw) != TYPE_STRING:
+				errors.append("cars[%d].team_id must be a string when provided." % index)
+			else:
+				target_car.team_id = String(team_id_raw).strip_edges()
 
 
 static func _read_car_id(
@@ -811,6 +842,107 @@ static func _parse_pit_config(config_raw: Dictionary, context: String) -> Dictio
 			errors.append("%s.pit_box_distance must differ from pit_entry_distance." % context)
 		if is_equal_approx(config.pit_box_distance, config.pit_exit_distance):
 			errors.append("%s.pit_box_distance must differ from pit_exit_distance." % context)
+
+	return {"config": config, "errors": errors}
+
+
+static func _parse_safety_car_config(config_raw: Dictionary, context: String) -> Dictionary:
+	var errors: PackedStringArray = PackedStringArray()
+	var config: RaceTypes.SafetyCarConfig = RaceTypes.SafetyCarConfig.new()
+
+	if config_raw.has("enabled"):
+		if typeof(config_raw["enabled"]) == TYPE_BOOL:
+			config.enabled = config_raw["enabled"]
+		else:
+			errors.append("%s.enabled must be a boolean." % context)
+	if config_raw.has("trigger_probability_per_lap"):
+		if _is_numeric(config_raw["trigger_probability_per_lap"]):
+			config.trigger_probability_per_lap = float(config_raw["trigger_probability_per_lap"])
+		else:
+			errors.append("%s.trigger_probability_per_lap must be numeric." % context)
+	if config_raw.has("max_events"):
+		if _is_numeric(config_raw["max_events"]):
+			config.max_events = int(config_raw["max_events"])
+		else:
+			errors.append("%s.max_events must be numeric." % context)
+	if config_raw.has("min_lap"):
+		if _is_numeric(config_raw["min_lap"]):
+			config.min_lap = int(config_raw["min_lap"])
+		else:
+			errors.append("%s.min_lap must be numeric." % context)
+	if config_raw.has("cooldown_laps"):
+		if _is_numeric(config_raw["cooldown_laps"]):
+			config.cooldown_laps = int(config_raw["cooldown_laps"])
+		else:
+			errors.append("%s.cooldown_laps must be numeric." % context)
+	if config_raw.has("sc_laps_min"):
+		if _is_numeric(config_raw["sc_laps_min"]):
+			config.sc_laps_min = int(config_raw["sc_laps_min"])
+		else:
+			errors.append("%s.sc_laps_min must be numeric." % context)
+	if config_raw.has("sc_laps_max"):
+		if _is_numeric(config_raw["sc_laps_max"]):
+			config.sc_laps_max = int(config_raw["sc_laps_max"])
+		else:
+			errors.append("%s.sc_laps_max must be numeric." % context)
+	if config_raw.has("vsc_laps_min"):
+		if _is_numeric(config_raw["vsc_laps_min"]):
+			config.vsc_laps_min = int(config_raw["vsc_laps_min"])
+		else:
+			errors.append("%s.vsc_laps_min must be numeric." % context)
+	if config_raw.has("vsc_laps_max"):
+		if _is_numeric(config_raw["vsc_laps_max"]):
+			config.vsc_laps_max = int(config_raw["vsc_laps_max"])
+		else:
+			errors.append("%s.vsc_laps_max must be numeric." % context)
+	if config_raw.has("vsc_probability"):
+		if _is_numeric(config_raw["vsc_probability"]):
+			config.vsc_probability = float(config_raw["vsc_probability"])
+		else:
+			errors.append("%s.vsc_probability must be numeric." % context)
+	if config_raw.has("sc_speed_cap"):
+		if _is_numeric(config_raw["sc_speed_cap"]):
+			config.sc_speed_cap = float(config_raw["sc_speed_cap"])
+		else:
+			errors.append("%s.sc_speed_cap must be numeric." % context)
+	if config_raw.has("sc_leader_pace_ratio"):
+		if _is_numeric(config_raw["sc_leader_pace_ratio"]):
+			config.sc_leader_pace_ratio = float(config_raw["sc_leader_pace_ratio"])
+		else:
+			errors.append("%s.sc_leader_pace_ratio must be numeric." % context)
+	if config_raw.has("vsc_speed_multiplier"):
+		if _is_numeric(config_raw["vsc_speed_multiplier"]):
+			config.vsc_speed_multiplier = float(config_raw["vsc_speed_multiplier"])
+		else:
+			errors.append("%s.vsc_speed_multiplier must be numeric." % context)
+	if config_raw.has("restart_drs_lock_laps"):
+		if _is_numeric(config_raw["restart_drs_lock_laps"]):
+			config.restart_drs_lock_laps = int(config_raw["restart_drs_lock_laps"])
+		else:
+			errors.append("%s.restart_drs_lock_laps must be numeric." % context)
+
+	if config.trigger_probability_per_lap < 0.0 or config.trigger_probability_per_lap > 1.0:
+		errors.append("%s.trigger_probability_per_lap must be in [0,1]." % context)
+	if config.max_events < 0:
+		errors.append("%s.max_events must be >= 0." % context)
+	if config.min_lap < 1:
+		errors.append("%s.min_lap must be >= 1." % context)
+	if config.cooldown_laps < 0:
+		errors.append("%s.cooldown_laps must be >= 0." % context)
+	if config.sc_laps_min <= 0 or config.sc_laps_max < config.sc_laps_min:
+		errors.append("%s SC laps range is invalid." % context)
+	if config.vsc_laps_min <= 0 or config.vsc_laps_max < config.vsc_laps_min:
+		errors.append("%s VSC laps range is invalid." % context)
+	if config.vsc_probability < 0.0 or config.vsc_probability > 1.0:
+		errors.append("%s.vsc_probability must be in [0,1]." % context)
+	if config.sc_speed_cap <= 0.0:
+		errors.append("%s.sc_speed_cap must be > 0." % context)
+	if config.sc_leader_pace_ratio <= 0.0 or config.sc_leader_pace_ratio > 1.0:
+		errors.append("%s.sc_leader_pace_ratio must be in (0,1]." % context)
+	if config.vsc_speed_multiplier <= 0.0 or config.vsc_speed_multiplier >= 1.0:
+		errors.append("%s.vsc_speed_multiplier must be in (0,1)." % context)
+	if config.restart_drs_lock_laps < 0:
+		errors.append("%s.restart_drs_lock_laps must be >= 0." % context)
 
 	return {"config": config, "errors": errors}
 

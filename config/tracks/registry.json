@@ -1,0 +1,34 @@
+{
+  "tracks": [
+    {
+      "id": "monza",
+      "display_name": "Monza",
+      "country": "Italy",
+      "config_path": "monza.json"
+    },
+    {
+      "id": "spa",
+      "display_name": "Spa-Francorchamps",
+      "country": "Belgium",
+      "config_path": "spa.json"
+    },
+    {
+      "id": "silverstone",
+      "display_name": "Silverstone",
+      "country": "United Kingdom",
+      "config_path": "silverstone.json"
+    },
+    {
+      "id": "suzuka",
+      "display_name": "Suzuka",
+      "country": "Japan",
+      "config_path": "suzuka.json"
+    },
+    {
+      "id": "interlagos",
+      "display_name": "Interlagos",
+      "country": "Brazil",
+      "config_path": "interlagos.json"
+    }
+  ]
+}

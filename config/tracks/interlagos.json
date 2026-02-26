@@ -1,0 +1,108 @@
+{
+  "track_id": "interlagos",
+  "display_name": "Interlagos",
+  "country": "Brazil",
+  "track": {
+    "geometry_asset": "../../data/tracks/interlagos/interlagos_centerline.json",
+    "physics": {
+      "a_lat_max": 25.0,
+      "a_long_accel": 8.0,
+      "a_long_brake": 20.0,
+      "v_top_speed": 83.0,
+      "curvature_epsilon": 0.0001
+    }
+  },
+  "pit": {
+    "enabled": true,
+    "pit_entry_distance": 1325.0,
+    "pit_exit_distance": 226.0,
+    "pit_box_distance": 23.0,
+    "pit_lane_speed_limit": 20.0,
+    "base_pit_stop_duration": 3.0,
+    "min_stop_lap": 1,
+    "max_stops": 5
+  },
+  "compounds": [
+    {
+      "name": "soft",
+      "degradation": {
+        "warmup_laps": 0.3,
+        "peak_multiplier": 1.0,
+        "degradation_rate": 0.025,
+        "min_multiplier": 0.72,
+        "optimal_threshold": 0.75,
+        "cliff_threshold": 0.3,
+        "cliff_multiplier": 2.5
+      }
+    },
+    {
+      "name": "medium",
+      "degradation": {
+        "warmup_laps": 0.5,
+        "peak_multiplier": 0.988,
+        "degradation_rate": 0.02,
+        "min_multiplier": 0.75,
+        "optimal_threshold": 0.75,
+        "cliff_threshold": 0.3,
+        "cliff_multiplier": 2.5
+      }
+    },
+    {
+      "name": "hard",
+      "degradation": {
+        "warmup_laps": 0.8,
+        "peak_multiplier": 0.976,
+        "degradation_rate": 0.012,
+        "min_multiplier": 0.8,
+        "optimal_threshold": 0.75,
+        "cliff_threshold": 0.3,
+        "cliff_multiplier": 2.5
+      }
+    }
+  ],
+  "fuel": {
+    "enabled": true,
+    "max_capacity_kg": 110.0,
+    "consumption_per_lap_kg": 2.2,
+    "weight_penalty_factor": 0.05,
+    "fuel_empty_penalty": 0.5,
+    "refuel_rate_kg_per_sec": 2.0
+  },
+  "overtaking": {
+    "enabled": true,
+    "proximity_distance": 50.0,
+    "overtake_speed_threshold": 2.0,
+    "held_up_speed_buffer": 0.1,
+    "cooldown_seconds": 3.0
+  },
+  "drs": {
+    "enabled": true,
+    "detection_threshold": 50.0,
+    "speed_boost": 1.06,
+    "min_activation_lap": 3,
+    "zones": [
+      {
+        "detection_distance": 1300.0,
+        "zone_start": 1350.0,
+        "zone_end": 150.0
+      }
+    ]
+  },
+  "safety_car": {
+    "enabled": true,
+    "trigger_probability_per_lap": 0.06,
+    "max_events": 2,
+    "min_lap": 2,
+    "cooldown_laps": 2,
+    "sc_laps_min": 3,
+    "sc_laps_max": 5,
+    "vsc_laps_min": 2,
+    "vsc_laps_max": 3,
+    "vsc_probability": 0.45,
+    "sc_speed_cap": 25.0,
+    "sc_leader_pace_ratio": 0.9,
+    "vsc_speed_multiplier": 0.6,
+    "restart_drs_lock_laps": 2
+  },
+  "default_laps": 18
+}

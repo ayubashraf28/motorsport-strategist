@@ -42,21 +42,33 @@ This is still not a full manager game loop, but the race operations layer is now
 - Distance-based pit lane movement behavior.
 - JSONL lap snapshot and pit-event telemetry for offline analysis.
 
+### V3.2 (Game Experience and Presentation)
+- Full game flow: main menu → race setup → race → results screen.
+- F1 Manager-inspired timing tower HUD with cycling data modes (interval, last lap, tyre, fuel).
+- Track/UI layer separation with auto-fit rotation and scaling for all circuits.
+- Multi-track support: 5 circuits (Monza, Spa, Silverstone, Suzuka, Interlagos).
+- Team registry and team colors from config.
+- AI strategy controller for automated pit decisions.
+- 8-car grid support.
+
 Business meaning:
-- The prototype now supports meaningful strategy experimentation, not only race progression visualization.
+- The prototype now feels like a game rather than a simulation debug tool. Players navigate menus, choose tracks and teams, watch races with a professional HUD, and see results — a complete session loop.
 
 ## 3. Current Feature Set (Externally Observable)
 
 From a stakeholder/player perspective, the prototype currently supports:
-- Start/run/pause/reset race session
-- Time controls (`1x`, `2x`, `4x`)
-- Multi-car race progression with live position board
+- Main menu → race setup → race → results game flow
+- Track selection from 5 real-world circuits (Monza, Spa, Silverstone, Suzuka, Interlagos)
+- Team selection with color-coded car identification
+- 8-car grids with AI strategy for non-player pit decisions
+- Start/run/pause/reset race session with time controls (`1x`, `2x`, `4x`)
+- F1-style timing tower with cycling data views (interval, last lap, tyre status, fuel level)
 - Tyre compounds, stint counters, and pit request workflow
-- Fuel percentages and fuel-weight performance impact
+- Fuel simulation with weight-based performance impact
 - Pit stop transitions (entry, stop, exit) and compound swaps
-- Tyre life/phase display and normalized pace display in HUD
-- Race completion and finish-order handling
-- Debug overlays for pace/curvature/speed
+- Tracks auto-rotate and scale to fit the viewport naturally
+- Post-race results screen with finish order
+- Debug overlays for pace/curvature/speed (toggle with `D`)
 - Telemetry files for lap snapshots and pit lifecycle events
 
 ## 4. Target Audience (Current Stage)
@@ -97,9 +109,11 @@ This supports controlled promotion from dev to UAT to production once release ca
 
 1. Deterministic simulation supports reproducible balancing and confidence in regressions.
 2. Config-first behavior tuning reduces engineering bottlenecks for gameplay iteration.
-3. V3.1 telemetry gives a concrete analysis loop for strategy and balancing decisions.
-4. Clear sim/presentation separation keeps future feature growth manageable.
+3. Telemetry gives a concrete analysis loop for strategy and balancing decisions.
+4. Clear sim/presentation/UI layer separation keeps future feature growth manageable.
 5. Versioned schema support preserves backward compatibility while expanding capability.
+6. Multi-track support with auto-fit means new circuits can be added without UI/layout rework.
+7. Complete session flow (menu → setup → race → results) makes the product demonstrable to stakeholders.
 
 ## 8. Current Business Risks
 
@@ -121,6 +135,12 @@ Completed core scope:
 - Pit strategy request flow and HUD integration
 - Telemetry logging for lap and pit lifecycle analysis
 - CI and release pipeline foundation
+- Full game flow (menus, setup, race, results)
+- F1-style timing tower with cycling data modes
+- Multi-track support (5 circuits) with auto-fit rotation/scaling
+- Team registry and color-coded identification
+- AI strategy controller for automated pit decisions
+- 8-car grid support
 
 Not yet implemented (major manager-game capabilities):
 - Weather systems and dynamic track conditions
@@ -129,6 +149,7 @@ Not yet implemented (major manager-game capabilities):
 - Longitudinal season mode and persistence
 - In-product telemetry analysis tooling/dashboard
 - Multiplayer/network race operations
+- Player-controlled car strategy beyond pit compound cycling
 
 ## 10. Recommended Immediate Priorities
 
@@ -140,6 +161,6 @@ Not yet implemented (major manager-game capabilities):
 
 ## 11. Handoff Summary
 
-The project has progressed from race simulation baseline into an early but meaningful strategy sandbox.
-Tyre, fuel, pit, and telemetry capabilities are now present and usable for balancing and product discovery.
-The next phase should prioritize management-loop depth and analytics tooling while preserving deterministic simulation quality.
+The project has progressed from race simulation baseline into an early but complete race session experience.
+The prototype now has a full game flow, professional-quality HUD, multi-track support, and AI opponents — making it demonstrable as a product rather than a debug tool.
+The next phase should prioritize management-loop depth (team/driver systems, season mode) and analytics tooling while preserving deterministic simulation quality.

@@ -11,6 +11,8 @@ const PaceDebugOverlay = preload("res://scripts/pace_debug_overlay.gd")
 const CurvatureDebugOverlay = preload("res://scripts/curvature_debug_overlay.gd")
 const SpeedDebugOverlay = preload("res://scripts/speed_debug_overlay.gd")
 const LapSnapshotLogger = preload("res://scripts/lap_snapshot_logger.gd")
+const AiStrategyController = preload("res://scripts/ai_strategy_controller.gd")
+const RaceEngineer = preload("res://scripts/race_engineer.gd")
 
 const FIXED_DT: float = 1.0 / 120.0
 const MAX_STEPS_PER_FRAME: int = 16
@@ -35,6 +37,7 @@ const CAR_COLORS := [
 	Color(0.90, 0.30, 0.50)
 ]
 
+@onready var _track_view: Node2D = %TrackView
 @onready var _track_path: Path2D = %TrackPath
 @onready var _track_line: Line2D = %TrackLine
 @onready var _start_finish_marker: Line2D = %StartFinishMarker
@@ -57,6 +60,11 @@ var _active_config: RaceTypes.RaceConfig = null
 var _runtime_geometry: RaceTypes.TrackGeometryData = null
 var _debug_mode: int = DEBUG_MODE_OFF
 var _lap_snapshot_logger: LapSnapshotLogger = LapSnapshotLogger.new()
+var _ai_strategy: AiStrategyController = null
+var _car_color_map: Dictionary = {}
+var _race_finished_handled: bool = false
+var _race_engineer: RaceEngineer = null
+var _player_team_id: String = ""
 
 
 func _ready() -> void:
@@ -82,7 +90,31 @@ func _process(delta: float) -> void:
 		if result.get("capped", false):
 			_maybe_warn_spiral_of_death()
 
-	_apply_snapshot(_simulator.get_snapshot())
+	var snapshot: RaceTypes.RaceSnapshot = _simulator.get_snapshot()
+
+	# AI strategy evaluation after stepping
+	if _ai_strategy != null and not _is_paused:
+		_ai_strategy.evaluate(snapshot, _simulator)
+		snapshot = _simulator.get_snapshot()
+
+	# Race engineer radio messages
+	if _race_engineer != null and not _is_paused:
+		var drs_threshold: float = _simulator.get_drs_detection_threshold()
+		var radio_messages: Array = _race_engineer.evaluate(
+			snapshot,
+			drs_threshold,
+			_simulator.get_safety_car_phase(),
+			_simulator.get_safety_car_laps_remaining()
+		)
+		if not radio_messages.is_empty():
+			_hud.show_radio_messages(radio_messages, snapshot.race_time)
+
+	_apply_snapshot(snapshot)
+
+
+func _exit_tree() -> void:
+	if _lap_snapshot_logger != null:
+		_lap_snapshot_logger.close()
 
 
 func _exit_tree() -> void:
@@ -114,6 +146,27 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _load_config() -> bool:
+	# Try GameState first (normal game flow via menu)
+	if _try_load_from_game_state():
+		return true
+	# Fallback to disk (editor debugging, backward compat)
+	return _load_config_from_disk()
+
+
+func _try_load_from_game_state() -> bool:
+	var game_state: Node = get_node_or_null("/root/GameState")
+	if game_state == null:
+		return false
+	if game_state.active_config == null:
+		return false
+	_active_config = game_state.active_config
+	_config_source_path = game_state.track_geometry_asset_path
+	_car_color_map = game_state.car_colors
+	_player_team_id = String(game_state.player_team_id).strip_edges()
+	return true
+
+
+func _load_config_from_disk() -> bool:
 	var load_result: Dictionary = RaceConfigLoader.load_race_config()
 	var load_errors: PackedStringArray = load_result.get("errors", PackedStringArray())
 	if not load_errors.is_empty():
@@ -126,8 +179,9 @@ func _load_config() -> bool:
 		_hud.set_error("Race config could not be parsed.")
 		return false
 	if _active_config.cars.is_empty():
-		_hud.set_empty("No cars configured. Add cars in config/race_v3.json, config/race_v2.json, config/race_v1.1.json, or config/race_v1.json.")
+		_hud.set_empty("No cars configured. Add cars in config/race_v4.json, config/race_v3.json, config/race_v2.json, config/race_v1.1.json, or config/race_v1.json.")
 		return false
+	_player_team_id = _resolve_player_team_from_config()
 	return true
 
 
@@ -149,11 +203,10 @@ func _initialize_track_from_curve() -> bool:
 		_hud.set_error("Track curve is invalid. Add at least 3 points to TrackPath.")
 		return false
 
-	_track_line.position = _track_path.position
 	_track_line.points = _track_sampler.get_polyline()
 	_track_line.closed = false
-	_cars_layer.position = _track_path.position
 	_update_start_finish_marker()
+	_fit_track_to_viewport()
 	return true
 
 
@@ -183,11 +236,10 @@ func _initialize_track_from_geometry_asset() -> bool:
 		_hud.set_error("Track geometry asset produced an invalid polyline.")
 		return false
 
-	_track_line.position = _track_path.position
 	_track_line.points = _track_sampler.get_polyline()
 	_track_line.closed = false
-	_cars_layer.position = _track_path.position
 	_update_start_finish_marker()
+	_fit_track_to_viewport()
 	return true
 
 
@@ -203,6 +255,9 @@ func _initialize_simulator() -> bool:
 
 	_time_scale = _sanitize_time_scale(_active_config.default_time_scale)
 	_is_paused = false
+	_race_finished_handled = false
+	if _player_team_id.is_empty():
+		_player_team_id = _resolve_player_team_from_config()
 	_step_runner.reset()
 	_build_car_nodes(_simulator.get_snapshot().cars)
 	_configure_debug_overlays(runtime.track_length)
@@ -212,8 +267,35 @@ func _initialize_simulator() -> bool:
 		_simulator.get_available_compounds(),
 		_simulator.get_fuel_capacity_kg()
 	)
+	_hud.configure_player_team(_player_team_id)
+	_hud.set_car_colors(_car_color_map)
+	_initialize_ai_strategy()
+	_race_engineer = RaceEngineer.new()
 	_start_lap_snapshot_logging()
 	return true
+
+
+func _initialize_ai_strategy() -> void:
+	if not _simulator.is_pit_enabled():
+		_ai_strategy = null
+		return
+
+	_ai_strategy = AiStrategyController.new()
+	var compounds: PackedStringArray = _simulator.get_available_compounds()
+
+	# Get thresholds from GameState if available, otherwise use defaults
+	var thresholds: Dictionary = {}
+	var game_state: Node = get_node_or_null("/root/GameState")
+	if game_state != null and not game_state.ai_thresholds.is_empty():
+		thresholds = game_state.ai_thresholds
+	else:
+		# Default thresholds for backward-compat disk loading
+		for raw_car in _simulator.get_snapshot().cars:
+			var car: RaceTypes.CarState = raw_car as RaceTypes.CarState
+			if car != null:
+				thresholds[car.id] = 0.35
+
+	_ai_strategy.configure(thresholds, compounds, _player_team_id)
 
 
 func _build_car_nodes(cars: Array) -> void:
@@ -228,11 +310,26 @@ func _build_car_nodes(cars: Array) -> void:
 			continue
 		var dot: CarDot = CarDot.new()
 		dot.name = "CarDot_%s" % car.id
-		dot.configure(car.id, CAR_COLORS[car_index % CAR_COLORS.size()], DOT_RADIUS)
+		var color: Color = _car_color_map.get(car.id, CAR_COLORS[car_index % CAR_COLORS.size()])
+		dot.configure(car.id, color, DOT_RADIUS)
 		dot.set_id_visible(true)
 		_cars_layer.add_child(dot)
 		_car_nodes[car.id] = dot
 		car_index += 1
+
+
+func _resolve_player_team_from_config() -> String:
+	if _active_config == null:
+		return ""
+	if not _player_team_id.is_empty():
+		return _player_team_id
+	for car_config in _active_config.cars:
+		if car_config == null:
+			continue
+		var team_id: String = car_config.team_id.strip_edges()
+		if not team_id.is_empty():
+			return team_id
+	return ""
 
 
 func _apply_snapshot(snapshot: RaceTypes.RaceSnapshot) -> void:
@@ -247,11 +344,21 @@ func _apply_snapshot(snapshot: RaceTypes.RaceSnapshot) -> void:
 
 	if snapshot.race_state == RaceTypes.RaceState.FINISHED and not _is_paused:
 		_set_paused(true)
+		if not _race_finished_handled:
+			_race_finished_handled = true
+			_on_race_finished(snapshot)
 
 	var pending_requests: Dictionary = _simulator.get_pending_pit_requests() if _simulator != null else {}
 	_hud.render(snapshot, _is_paused, _time_scale, pending_requests)
 	if ENABLE_LAP_SNAPSHOT_LOGGING and _lap_snapshot_logger != null:
 		_lap_snapshot_logger.capture(snapshot, pending_requests)
+
+
+func _on_race_finished(snapshot: RaceTypes.RaceSnapshot) -> void:
+	var game_state: Node = get_node_or_null("/root/GameState")
+	if game_state != null:
+		game_state.store_race_results(snapshot)
+		_hud.show_continue_button()
 
 
 func _connect_ui_signals() -> void:
@@ -260,6 +367,10 @@ func _connect_ui_signals() -> void:
 	_hud.speed_selected.connect(_on_speed_selected)
 	_hud.pit_requested.connect(_on_pit_requested)
 	_hud.pit_cancelled.connect(_on_pit_cancelled)
+	_hud.driver_mode_requested.connect(_on_driver_mode_requested)
+	_hud.team_order_requested.connect(_on_team_order_requested)
+	_hud.continue_requested.connect(_on_continue_requested)
+	_hud.main_menu_requested.connect(_on_main_menu_requested)
 
 
 func _on_pause_toggled(pause_requested: bool) -> void:
@@ -275,13 +386,52 @@ func _on_speed_selected(speed_scale: float) -> void:
 
 
 func _on_pit_requested(car_id: String, compound: String, fuel_kg: float) -> void:
-	if _simulator != null:
+	if _simulator != null and _is_player_controlled_car(car_id):
 		_simulator.request_pit_stop(car_id, compound, fuel_kg)
 
 
 func _on_pit_cancelled(car_id: String) -> void:
-	if _simulator != null:
+	if _simulator != null and _is_player_controlled_car(car_id):
 		_simulator.cancel_pit_stop(car_id)
+
+
+func _on_driver_mode_requested(car_id: String, mode: int) -> void:
+	if _simulator != null and _is_player_controlled_car(car_id):
+		_simulator.set_driver_mode(car_id, mode)
+
+
+func _on_team_order_requested(car_id: String, order: int, target_car_id: String) -> void:
+	if _simulator == null or not _is_player_controlled_car(car_id):
+		return
+	if order == 0:
+		_simulator.clear_team_order(car_id)
+	else:
+		_simulator.issue_team_order(car_id, order, target_car_id)
+
+
+func _is_player_controlled_car(car_id: String) -> bool:
+	if _simulator == null:
+		return false
+	var clean_car_id: String = car_id.strip_edges()
+	if clean_car_id.is_empty():
+		return false
+	if _player_team_id.is_empty():
+		return true
+
+	var snapshot: RaceTypes.RaceSnapshot = _simulator.get_snapshot()
+	for raw_car in snapshot.cars:
+		var car: RaceTypes.CarState = raw_car as RaceTypes.CarState
+		if car != null and car.id == clean_car_id:
+			return car.team_id == _player_team_id
+	return false
+
+
+func _on_continue_requested() -> void:
+	get_tree().change_scene_to_file("res://scenes/results.tscn")
+
+
+func _on_main_menu_requested() -> void:
+	get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
 
 
 func _set_paused(value: bool) -> void:
@@ -292,8 +442,14 @@ func _reset_race() -> void:
 	if _simulator == null:
 		return
 	_is_paused = false
+	_race_finished_handled = false
 	_step_runner.reset()
 	_simulator.reset()
+	if _ai_strategy != null:
+		_ai_strategy.reset()
+	if _race_engineer != null:
+		_race_engineer.reset()
+	_hud.hide_continue_button()
 	_start_lap_snapshot_logging()
 	_apply_snapshot(_simulator.get_snapshot())
 
@@ -320,7 +476,6 @@ func _maybe_warn_spiral_of_death() -> void:
 
 
 func _update_start_finish_marker() -> void:
-	_start_finish_marker.position = _track_path.position
 	var distance_at_line: float = 0.0
 	var line_center: Vector2 = _track_sampler.sample_position(distance_at_line)
 	var tangent: Vector2 = _track_sampler.sample_tangent(distance_at_line)
@@ -330,6 +485,76 @@ func _update_start_finish_marker() -> void:
 		line_center - normal * half_width,
 		line_center + normal * half_width
 	])
+
+
+func _fit_track_to_viewport() -> void:
+	var polyline: PackedVector2Array = _track_sampler.get_polyline()
+	if polyline.is_empty():
+		return
+
+	# Compute bounding box of raw track data
+	var bb_min := Vector2(INF, INF)
+	var bb_max := Vector2(-INF, -INF)
+	for point in polyline:
+		bb_min.x = minf(bb_min.x, point.x)
+		bb_min.y = minf(bb_min.y, point.y)
+		bb_max.x = maxf(bb_max.x, point.x)
+		bb_max.y = maxf(bb_max.y, point.y)
+
+	var track_center := (bb_min + bb_max) * 0.5
+	var track_size := bb_max - bb_min
+
+	# Available viewport area: leave room for timing tower (left) and bottom bar
+	var vp_width: float = 1600.0
+	var vp_height: float = 900.0
+	var margin: float = 30.0
+	var tower_width: float = 280.0
+	var bar_height: float = 38.0
+	var avail_left: float = tower_width + margin
+	var avail_top: float = margin
+	var avail_right: float = vp_width - margin
+	var avail_bottom: float = vp_height - bar_height - margin
+	var avail_size := Vector2(avail_right - avail_left, avail_bottom - avail_top)
+	var avail_center := Vector2(
+		(avail_left + avail_right) * 0.5,
+		(avail_top + avail_bottom) * 0.5
+	)
+
+	# Try 0 and 90 degree rotation, pick whichever fills the available area better
+	var score_0 := _fit_score(track_size, avail_size)
+	var score_90 := _fit_score(Vector2(track_size.y, track_size.x), avail_size)
+	var angle: float = -PI * 0.5 if score_90 > score_0 else 0.0
+
+	# Effective size after rotation
+	var eff_size: Vector2
+	if absf(angle) > 0.01:
+		eff_size = Vector2(track_size.y, track_size.x)
+	else:
+		eff_size = track_size
+
+	# Uniform scale to fit with 90% fill for padding
+	var scale_factor: float = minf(
+		avail_size.x / maxf(eff_size.x, 0.001),
+		avail_size.y / maxf(eff_size.y, 0.001)
+	) * 0.9
+
+	# Position TrackView so that the rotated+scaled track center maps to avail_center
+	var cos_a: float = cos(angle)
+	var sin_a: float = sin(angle)
+	var rotated_center := Vector2(
+		track_center.x * cos_a - track_center.y * sin_a,
+		track_center.x * sin_a + track_center.y * cos_a
+	)
+	_track_view.rotation = angle
+	_track_view.scale = Vector2(scale_factor, scale_factor)
+	_track_view.position = avail_center - scale_factor * rotated_center
+
+
+static func _fit_score(content: Vector2, container: Vector2) -> float:
+	var sx: float = container.x / maxf(content.x, 0.001)
+	var sy: float = container.y / maxf(content.y, 0.001)
+	var s: float = minf(sx, sy)
+	return (content.x * s * content.y * s) / maxf(container.x * container.y, 0.001)
 
 
 func _configure_debug_overlays(track_length: float) -> void:
@@ -362,7 +587,6 @@ func _configure_pace_overlay(track_length: float) -> void:
 		blend_distance = pace_track.blend_distance
 		segments = pace_track.pace_segments
 
-	_pace_debug_overlay.position = _track_path.position
 	_pace_debug_overlay.configure(
 		_track_sampler,
 		track_length,
@@ -374,7 +598,6 @@ func _configure_pace_overlay(track_length: float) -> void:
 func _configure_curvature_overlay(track_length: float) -> void:
 	if _runtime_geometry == null:
 		return
-	_curvature_debug_overlay.position = _track_path.position
 	_curvature_debug_overlay.configure(_track_sampler, track_length, _runtime_geometry.curvatures)
 
 
@@ -385,7 +608,6 @@ func _configure_speed_overlay(track_length: float) -> void:
 	var physics_config: RaceTypes.PhysicsVehicleConfig = _simulator.get_physics_config()
 	if physics_config == null:
 		return
-	_speed_debug_overlay.position = _track_path.position
 	_speed_debug_overlay.configure(_track_sampler, track_length, profile_speeds, physics_config.v_top_speed)
 
 

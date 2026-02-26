@@ -12,145 +12,112 @@ grow_vertical = 2
 mouse_filter = 1
 script = ExtResource("1_lw7fw")
 
-[node name="RootMargin" type="MarginContainer" parent="."]
+[node name="TimingTower" type="PanelContainer" parent="."]
+unique_name_in_owner = true
 layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = 16.0
-offset_top = 16.0
-offset_right = -16.0
-offset_bottom = -16.0
-grow_horizontal = 2
-grow_vertical = 2
+anchors_preset = 0
+anchor_left = 0.0
+anchor_right = 0.0
+offset_left = 10.0
+offset_top = 10.0
+offset_right = 270.0
+offset_bottom = 600.0
+grow_horizontal = 1
+mouse_filter = 1
 
-[node name="Panel" type="PanelContainer" parent="RootMargin"]
+[node name="TowerVBox" type="VBoxContainer" parent="TimingTower"]
 layout_mode = 2
-size_flags_horizontal = 1
-size_flags_vertical = 1
-custom_minimum_size = Vector2(560, 260)
+theme_override_constants/separation = 0
 
-[node name="MainColumn" type="VBoxContainer" parent="RootMargin/Panel"]
+[node name="TowerHeader" type="HBoxContainer" parent="TimingTower/TowerVBox"]
 layout_mode = 2
-theme_override_constants/separation = 8
+custom_minimum_size = Vector2(0, 22)
+theme_override_constants/separation = 0
 
-[node name="TitleLabel" type="Label" parent="RootMargin/Panel/MainColumn"]
+[node name="HeaderSpacer" type="Control" parent="TimingTower/TowerVBox/TowerHeader"]
 layout_mode = 2
-text = "Racing Manager Prototype v3"
+size_flags_horizontal = 3
 
-[node name="StateLabel" type="Label" parent="RootMargin/Panel/MainColumn"]
+[node name="PrevModeButton" type="Button" parent="TimingTower/TowerVBox/TowerHeader"]
 unique_name_in_owner = true
 layout_mode = 2
-text = "Initializing..."
+custom_minimum_size = Vector2(22, 0)
+theme_override_font_sizes/font_size = 10
+text = "<"
+flat = true
 
-[node name="HeaderGrid" type="GridContainer" parent="RootMargin/Panel/MainColumn"]
-layout_mode = 2
-columns = 12
-
-[node name="HeaderPosition" type="Label" parent="RootMargin/Panel/MainColumn/HeaderGrid"]
-layout_mode = 2
-size_flags_horizontal = 3
-text = "P"
-
-[node name="HeaderCarId" type="Label" parent="RootMargin/Panel/MainColumn/HeaderGrid"]
-layout_mode = 2
-size_flags_horizontal = 3
-text = "ID"
-
-[node name="HeaderCompound" type="Label" parent="RootMargin/Panel/MainColumn/HeaderGrid"]
+[node name="ModeLabel" type="Label" parent="TimingTower/TowerVBox/TowerHeader"]
 unique_name_in_owner = true
 layout_mode = 2
-size_flags_horizontal = 3
-text = "Compound"
+custom_minimum_size = Vector2(68, 0)
+theme_override_font_sizes/font_size = 10
+theme_override_colors/font_color = Color(0.6, 0.65, 0.75, 1)
+text = "INTERVAL"
+horizontal_alignment = 1
 
-[node name="HeaderSpeed" type="Label" parent="RootMargin/Panel/MainColumn/HeaderGrid"]
-layout_mode = 2
-size_flags_horizontal = 3
-text = "Speed"
-
-[node name="HeaderLapCount" type="Label" parent="RootMargin/Panel/MainColumn/HeaderGrid"]
-layout_mode = 2
-size_flags_horizontal = 3
-text = "Lap Count"
-
-[node name="HeaderStint" type="Label" parent="RootMargin/Panel/MainColumn/HeaderGrid"]
+[node name="NextModeButton" type="Button" parent="TimingTower/TowerVBox/TowerHeader"]
 unique_name_in_owner = true
 layout_mode = 2
-size_flags_horizontal = 3
-text = "Stint"
+custom_minimum_size = Vector2(22, 0)
+theme_override_font_sizes/font_size = 10
+text = ">"
+flat = true
 
-[node name="HeaderGap" type="Label" parent="RootMargin/Panel/MainColumn/HeaderGrid"]
+[node name="HeaderSep" type="HSeparator" parent="TimingTower/TowerVBox"]
 layout_mode = 2
-size_flags_horizontal = 3
-text = "Gap"
 
-[node name="HeaderDegradation" type="Label" parent="RootMargin/Panel/MainColumn/HeaderGrid"]
-layout_mode = 2
-size_flags_horizontal = 3
-text = "Tyre"
-
-[node name="HeaderFuel" type="Label" parent="RootMargin/Panel/MainColumn/HeaderGrid"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-text = "Fuel"
-
-[node name="HeaderGap" type="Label" parent="RootMargin/Panel/MainColumn/HeaderGrid"]
-layout_mode = 2
-size_flags_horizontal = 3
-text = "Gap"
-
-[node name="HeaderDegradation" type="Label" parent="RootMargin/Panel/MainColumn/HeaderGrid"]
-layout_mode = 2
-size_flags_horizontal = 3
-text = "Deg"
-
-[node name="HeaderCurrentLap" type="Label" parent="RootMargin/Panel/MainColumn/HeaderGrid"]
-layout_mode = 2
-size_flags_horizontal = 3
-text = "Current Lap"
-
-[node name="HeaderLastLap" type="Label" parent="RootMargin/Panel/MainColumn/HeaderGrid"]
-layout_mode = 2
-size_flags_horizontal = 3
-text = "Last Lap"
-
-[node name="HeaderBestLap" type="Label" parent="RootMargin/Panel/MainColumn/HeaderGrid"]
-layout_mode = 2
-size_flags_horizontal = 3
-text = "Best Lap"
-
-[node name="BodyGrid" type="GridContainer" parent="RootMargin/Panel/MainColumn"]
+[node name="RowContainer" type="VBoxContainer" parent="TimingTower/TowerVBox"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
-columns = 12
+theme_override_constants/separation = 2
 
-[node name="ControlsRow" type="HBoxContainer" parent="RootMargin/Panel/MainColumn"]
+[node name="BottomBar" type="PanelContainer" parent="."]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = -38.0
+grow_horizontal = 2
+grow_vertical = 0
+mouse_filter = 1
+
+[node name="BarHBox" type="HBoxContainer" parent="BottomBar"]
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="PauseButton" type="Button" parent="RootMargin/Panel/MainColumn/ControlsRow"]
+[node name="StateLabel" type="Label" parent="BottomBar/BarHBox"]
 unique_name_in_owner = true
 layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 12
+text = "Initializing..."
+
+[node name="PauseButton" type="Button" parent="BottomBar/BarHBox"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(72, 0)
 text = "Pause"
 
-[node name="ResetButton" type="Button" parent="RootMargin/Panel/MainColumn/ControlsRow"]
+[node name="ResetButton" type="Button" parent="BottomBar/BarHBox"]
 unique_name_in_owner = true
 layout_mode = 2
+custom_minimum_size = Vector2(56, 0)
 text = "Reset"
 
-[node name="Speed1Button" type="Button" parent="RootMargin/Panel/MainColumn/ControlsRow"]
+[node name="Speed1Button" type="Button" parent="BottomBar/BarHBox"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "1x"
 
-[node name="Speed2Button" type="Button" parent="RootMargin/Panel/MainColumn/ControlsRow"]
+[node name="Speed2Button" type="Button" parent="BottomBar/BarHBox"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "2x"
 
-[node name="Speed4Button" type="Button" parent="RootMargin/Panel/MainColumn/ControlsRow"]
+[node name="Speed4Button" type="Button" parent="BottomBar/BarHBox"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "4x"

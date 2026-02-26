@@ -1,0 +1,52 @@
+{
+  "teams": [
+    {
+      "id": "red_bull",
+      "name": "Red Bull Racing",
+      "color": "#E82828",
+      "v_ref_offset": 0.0,
+      "pit_threshold": 0.35,
+      "starting_compound": "soft",
+      "drivers": [
+        {"id": "VER", "display_name": "Verstappen"},
+        {"id": "PER", "display_name": "Perez"}
+      ]
+    },
+    {
+      "id": "ferrari",
+      "name": "Scuderia Ferrari",
+      "color": "#DC0000",
+      "v_ref_offset": -0.2,
+      "pit_threshold": 0.33,
+      "starting_compound": "soft",
+      "drivers": [
+        {"id": "LEC", "display_name": "Leclerc"},
+        {"id": "SAI", "display_name": "Sainz"}
+      ]
+    },
+    {
+      "id": "mercedes",
+      "name": "Mercedes-AMG",
+      "color": "#00D2BE",
+      "v_ref_offset": -0.8,
+      "pit_threshold": 0.30,
+      "starting_compound": "medium",
+      "drivers": [
+        {"id": "HAM", "display_name": "Hamilton"},
+        {"id": "RUS", "display_name": "Russell"}
+      ]
+    },
+    {
+      "id": "mclaren",
+      "name": "McLaren",
+      "color": "#FF8700",
+      "v_ref_offset": -1.0,
+      "pit_threshold": 0.38,
+      "starting_compound": "medium",
+      "drivers": [
+        {"id": "NOR", "display_name": "Norris"},
+        {"id": "PIA", "display_name": "Piastri"}
+      ]
+    }
+  ]
+}

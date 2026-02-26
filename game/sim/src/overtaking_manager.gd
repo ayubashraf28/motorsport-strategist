@@ -8,12 +8,14 @@ const _COOLDOWN_CLEANUP_INTERVAL_STEPS: int = 120
 var _config: RaceTypes.OvertakingConfig = null
 var _cooldowns: Dictionary = {}
 var _is_enabled: bool = false
+var _runtime_enabled: bool = true
 var _step_counter: int = 0
 
 
 func configure(config: RaceTypes.OvertakingConfig) -> void:
 	_config = config.clone() if config != null else null
 	_is_enabled = _config != null and _config.enabled
+	_runtime_enabled = true
 	reset()
 
 
@@ -23,7 +25,11 @@ func reset() -> void:
 
 
 func is_enabled() -> bool:
-	return _is_enabled
+	return _is_enabled and _runtime_enabled
+
+
+func set_enabled(value: bool) -> void:
+	_runtime_enabled = value
 
 
 func process_interactions(
@@ -37,7 +43,7 @@ func process_interactions(
 		car.is_held_up = false
 		car.held_up_by = ""
 
-	if not _is_enabled or _config == null or cars.is_empty() or track_length <= 0.0:
+	if not is_enabled() or _config == null or cars.is_empty() or track_length <= 0.0:
 		return
 
 	_step_counter += 1

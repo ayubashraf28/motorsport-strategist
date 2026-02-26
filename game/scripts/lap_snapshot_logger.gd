@@ -252,6 +252,7 @@ func _build_car_payload(
 		"current_compound": car.current_compound,
 		"stint_number": car.stint_number,
 		"stint_lap_count": car.stint_lap_count,
+		"team_id": car.team_id,
 		"is_in_pit": car.is_in_pit,
 		"pit_phase": _pit_phase_name(car.pit_phase),
 		"pit_time_remaining_s": _finite_or_null(car.pit_time_remaining),
@@ -271,6 +272,13 @@ func _build_car_payload(
 		"effective_speed_units_per_sec": _finite_or_null(car.effective_speed_units_per_sec),
 		"is_held_up": car.is_held_up,
 		"held_up_by": car.held_up_by,
+		"driver_mode": car.driver_mode,
+		"drs_active": car.drs_active,
+		"drs_eligible": car.drs_eligible,
+		"team_order": car.team_order,
+		"team_order_target": car.team_order_target,
+		"safety_car_phase": _safety_car_phase_name(snapshot.safety_car_phase),
+		"safety_car_laps_remaining": snapshot.safety_car_laps_remaining,
 		"last_lap_time_s": _finite_or_null(car.last_lap_time),
 		"best_lap_time_s": _finite_or_null(car.best_lap_time)
 	}
@@ -355,4 +363,17 @@ func _pit_phase_name(phase: int) -> String:
 			return "STOPPED"
 		RaceTypes.PitPhase.EXIT:
 			return "EXIT"
+	return "UNKNOWN"
+
+
+func _safety_car_phase_name(phase: int) -> String:
+	match phase:
+		RaceTypes.SafetyCarPhase.GREEN:
+			return "GREEN"
+		RaceTypes.SafetyCarPhase.SC_DEPLOYED:
+			return "SC_DEPLOYED"
+		RaceTypes.SafetyCarPhase.SC_ENDING:
+			return "SC_ENDING"
+		RaceTypes.SafetyCarPhase.VSC:
+			return "VSC"
 	return "UNKNOWN"
