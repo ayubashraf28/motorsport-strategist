@@ -117,6 +117,11 @@ func _exit_tree() -> void:
 		_lap_snapshot_logger.close()
 
 
+func _exit_tree() -> void:
+	if _lap_snapshot_logger != null:
+		_lap_snapshot_logger.close()
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
 		match event.keycode:

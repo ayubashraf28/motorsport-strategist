@@ -1,4 +1,4 @@
-extends Control
+﻿extends Control
 class_name RaceHud
 
 signal pause_toggled(is_paused: bool)
@@ -355,6 +355,15 @@ func _render_data_cell(
 			else:
 				fuel_color = Color(0.75, 0.75, 0.8)
 			label.add_theme_color_override("font_color", fuel_color)
+
+		var pit_button: Button = row["pit_button"]
+		pit_button.visible = _pit_enabled and not car.is_finished
+		pit_button.disabled = not _pit_enabled or car.is_finished
+		pit_button.text = "CANCEL" if has_pending_pit else "PIT"
+		pit_button.set_meta("car_id", car.id)
+		pit_button.set_meta("pending", has_pending_pit)
+		pit_button.set_meta("current_compound", _resolve_compound_for_request(car, pit_request))
+		_apply_row_visibility(row)
 
 
 # --- UI Signal Handlers ---
