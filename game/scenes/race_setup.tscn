@@ -90,6 +90,19 @@ layout_mode = 2
 button_pressed = true
 text = "Fuel Simulation"
 
+[node name="PlayerTeamRow" type="HBoxContainer" parent="MarginContainer/VBox/HSplit/LeftPanel"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="PlayerTeamLabel" type="Label" parent="MarginContainer/VBox/HSplit/LeftPanel/PlayerTeamRow"]
+layout_mode = 2
+text = "Player Team:"
+
+[node name="PlayerTeamOption" type="OptionButton" parent="MarginContainer/VBox/HSplit/LeftPanel/PlayerTeamRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
 [node name="RightPanel" type="VBoxContainer" parent="MarginContainer/VBox/HSplit"]
 layout_mode = 2
 size_flags_horizontal = 3

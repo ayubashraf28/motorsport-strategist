@@ -22,6 +22,14 @@ func test_start_session_writes_initial_lap_snapshot_for_each_car() -> void:
 	assert(lap_entries.size() == 2)
 	assert(int(lap_entries[0]["lap_number"]) == 1)
 	assert(int(lap_entries[1]["lap_number"]) == 1)
+	assert(lap_entries[0].has("driver_mode"))
+	assert(lap_entries[0].has("drs_active"))
+	assert(lap_entries[0].has("drs_eligible"))
+	assert(lap_entries[0].has("team_id"))
+	assert(lap_entries[0].has("team_order"))
+	assert(lap_entries[0].has("team_order_target"))
+	assert(lap_entries[0].has("safety_car_phase"))
+	assert(lap_entries[0].has("safety_car_laps_remaining"))
 
 
 func test_capture_logs_only_when_lap_count_increases() -> void:

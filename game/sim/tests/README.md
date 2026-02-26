@@ -14,6 +14,8 @@ Coverage priorities:
 - pit stop phase transitions and entry/exit rules
 - pit strategy queue request/cancel/consume behavior
 - overtaking/held-up/cooldown interaction behavior
+- safety car / VSC trigger, phase, and DRS gating behavior
+- team-order deterministic behavior (let through / hold position / defend)
 - reset/initial state invariants
 - validation failures for malformed configuration
 - reproducibility under identical fixed-step input sequences

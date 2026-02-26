@@ -11,6 +11,7 @@ var teams_data: Array = []
 var selected_track_id: String = "monza"
 var selected_laps: int = 15
 var fuel_enabled: bool = true
+var player_team_id: String = ""
 
 var active_config: RaceTypes.RaceConfig = null
 var track_geometry_asset_path: String = ""
@@ -62,7 +63,7 @@ func compose_race_config() -> PackedStringArray:
 
 	# Build RaceConfig using the standard loader by composing a full JSON dict
 	var race_dict: Dictionary = {
-		"schema_version": "3.0",
+		"schema_version": "4.0",
 		"count_first_lap_from_start": true,
 		"seed": 42,
 		"default_time_scale": 1.0,
@@ -73,6 +74,7 @@ func compose_race_config() -> PackedStringArray:
 		"pit": track_config.get("pit", {}),
 		"overtaking": track_config.get("overtaking", {}),
 		"drs": track_config.get("drs", {}),
+		"safety_car": track_config.get("safety_car", {}),
 		"debug": {"show_pace_profile": false, "show_curvature_overlay": false, "show_speed_overlay": true}
 	}
 
@@ -81,6 +83,8 @@ func compose_race_config() -> PackedStringArray:
 
 	# Build car configs from team data
 	var car_configs: Array = TeamRegistry.build_car_configs(teams_data, base_v_ref, fuel_capacity)
+	if player_team_id.is_empty() and not teams_data.is_empty():
+		player_team_id = String((teams_data[0] as Dictionary).get("id", "")).strip_edges()
 	var cars_array: Array = []
 	for car_config in car_configs:
 		var car_dict: Dictionary = {
@@ -88,7 +92,8 @@ func compose_race_config() -> PackedStringArray:
 			"display_name": car_config.display_name,
 			"v_ref": car_config.v_ref,
 			"starting_compound": car_config.starting_compound,
-			"starting_fuel_kg": car_config.starting_fuel_kg
+			"starting_fuel_kg": car_config.starting_fuel_kg,
+			"team_id": car_config.team_id
 		}
 		cars_array.append(car_dict)
 	race_dict["cars"] = cars_array
@@ -131,6 +136,7 @@ func store_race_results(snapshot: RaceTypes.RaceSnapshot) -> void:
 		cars_data.append({
 			"id": car.id,
 			"display_name": car.display_name,
+			"team_id": car.team_id,
 			"team_name": team.get("name", ""),
 			"team_color": team.get("color", "#FFFFFF"),
 			"finish_position": car.finish_position,

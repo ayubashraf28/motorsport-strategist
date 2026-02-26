@@ -88,5 +88,21 @@
       }
     ]
   },
+  "safety_car": {
+    "enabled": true,
+    "trigger_probability_per_lap": 0.06,
+    "max_events": 2,
+    "min_lap": 2,
+    "cooldown_laps": 2,
+    "sc_laps_min": 3,
+    "sc_laps_max": 5,
+    "vsc_laps_min": 2,
+    "vsc_laps_max": 3,
+    "vsc_probability": 0.45,
+    "sc_speed_cap": 25.0,
+    "sc_leader_pace_ratio": 0.9,
+    "vsc_speed_multiplier": 0.6,
+    "restart_drs_lock_laps": 2
+  },
   "default_laps": 18
 }

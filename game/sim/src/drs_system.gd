@@ -151,6 +151,10 @@ func get_speed_boost() -> float:
 	return _speed_boost
 
 
+func get_detection_threshold() -> float:
+	return _detection_threshold
+
+
 # --- Internal Helpers ---
 
 func _compute_track_gap(ahead: RaceTypes.CarState, behind: RaceTypes.CarState, track_length: float) -> float:

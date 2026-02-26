@@ -15,6 +15,8 @@ const PitStopManager = preload("res://sim/src/pit_stop_manager.gd")
 const PitStrategy = preload("res://sim/src/pit_strategy.gd")
 const DriverModeModule = preload("res://sim/src/driver_mode.gd")
 const DrsSystemModule = preload("res://sim/src/drs_system.gd")
+const SafetyCarControllerModule = preload("res://sim/src/safety_car_controller.gd")
+const TeamOrdersModule = preload("res://sim/src/team_orders.gd")
 
 const _INTERNAL_INTEGRATION_STEP: float = 1.0 / 120.0
 const _LAP_CROSS_EPSILON: float = 0.000001
@@ -36,6 +38,10 @@ var _fuel_config: RaceTypes.FuelConfig = null
 var _pit_stop_manager: PitStopManager = PitStopManager.new()
 var _pit_strategy: PitStrategy = PitStrategy.new()
 var _drs_system: DrsSystemModule = DrsSystemModule.new()
+var _safety_car_controller: SafetyCarControllerModule = SafetyCarControllerModule.new()
+var _team_orders: TeamOrdersModule = TeamOrdersModule.new()
+var _team_order_issued_time: Dictionary = {}
+var _last_leader_lap_for_race_control: int = 0
 
 
 func initialize(config: RaceTypes.RaceConfig, runtime: RaceTypes.RaceRuntimeParams) -> void:
@@ -52,6 +58,10 @@ func initialize(config: RaceTypes.RaceConfig, runtime: RaceTypes.RaceRuntimePara
 	_fuel_config = null
 	_pit_stop_manager = PitStopManager.new()
 	_pit_strategy = PitStrategy.new()
+	_safety_car_controller = SafetyCarControllerModule.new()
+	_team_orders = TeamOrdersModule.new()
+	_team_order_issued_time.clear()
+	_last_leader_lap_for_race_control = 0
 
 	_validate_inputs(config, runtime)
 	if not _validation_errors.is_empty():
@@ -74,6 +84,7 @@ func initialize(config: RaceTypes.RaceConfig, runtime: RaceTypes.RaceRuntimePara
 		state.base_speed_units_per_sec = car_config.base_speed_units_per_sec
 		state.v_ref = car_config.v_ref if car_config.v_ref > 0.0 else car_config.base_speed_units_per_sec
 		state.reset_runtime_state()
+		state.team_id = car_config.team_id
 		_cars.append(state)
 		_car_degradation_configs[state.id] = _resolve_degradation_config_for_car(car_config, _config.degradation)
 
@@ -94,6 +105,8 @@ func initialize(config: RaceTypes.RaceConfig, runtime: RaceTypes.RaceRuntimePara
 	_overtaking_manager.configure(_config.overtaking)
 	_drs_system = DrsSystemModule.new()
 	_drs_system.configure(_config.drs, _runtime.track_length)
+	_safety_car_controller = SafetyCarControllerModule.new()
+	_safety_car_controller.configure(_config.safety_car, _config.seed)
 	_is_ready = true
 	reset()
 
@@ -112,12 +125,17 @@ func reset() -> void:
 		_pit_strategy.reset()
 	if _drs_system != null:
 		_drs_system.reset()
+	if _safety_car_controller != null:
+		_safety_car_controller.reset()
+	_team_order_issued_time.clear()
+	_last_leader_lap_for_race_control = 0
 
 	for index in range(_cars.size()):
 		var car: RaceTypes.CarState = _cars[index]
 		car.reset_runtime_state()
 		_apply_initial_dynamic_state(index, car)
 	_update_standings()
+	_sync_race_control_states()
 
 
 func step(dt_seconds: float) -> void:
@@ -133,6 +151,7 @@ func step(dt_seconds: float) -> void:
 		var chunk_dt: float = minf(remaining_dt, _INTERNAL_INTEGRATION_STEP)
 		var chunk_start_time: float = _race_time
 		var pit_processed_ids: Dictionary = {}
+		_sync_race_control_states()
 
 		# Phase 0: evaluate DRS detection points.
 		if _drs_system != null and _drs_system.is_configured():
@@ -173,11 +192,15 @@ func step(dt_seconds: float) -> void:
 
 			_compute_car_speed(car)
 
-		# Phase 2: resolve overtaking interactions against precomputed speeds.
+		# Phase 2: apply team-order and race-control speed shaping.
+		_apply_team_orders()
+		_apply_safety_car_following_constraints()
+
+		# Phase 3: resolve overtaking interactions against precomputed speeds.
 		if _overtaking_manager != null and _overtaking_manager.is_enabled():
 			_overtaking_manager.process_interactions(_cars, _runtime.track_length, _race_time)
 
-		# Phase 3: apply movement and lap-crossing updates.
+		# Phase 4: apply movement and lap-crossing updates.
 		for car in _cars:
 			if _race_state_machine != null and not _race_state_machine.is_car_racing(car):
 				continue
@@ -187,8 +210,9 @@ func step(dt_seconds: float) -> void:
 				continue
 			_apply_car_movement(car, chunk_start_time, chunk_dt)
 
-		# Phase 4: update standings from latest distances.
+		# Phase 5: update standings from latest distances and race-control laps.
 		_update_standings()
+		_update_race_control_on_leader_lap()
 
 		_race_time += chunk_dt
 		remaining_dt -= chunk_dt
@@ -203,6 +227,9 @@ func get_snapshot() -> RaceTypes.RaceSnapshot:
 	if _race_state_machine != null:
 		snapshot.race_state = _race_state_machine.get_state()
 		snapshot.finish_order = _race_state_machine.get_finish_order()
+	if _safety_car_controller != null:
+		snapshot.safety_car_phase = _safety_car_controller.get_phase()
+		snapshot.safety_car_laps_remaining = _safety_car_controller.get_laps_remaining()
 	for car in _cars:
 		snapshot.cars.append(car.clone())
 	return snapshot
@@ -293,7 +320,7 @@ func set_driver_mode(car_id: String, mode: int) -> void:
 	if not DriverModeModule.is_valid_mode(mode):
 		return
 	var car: RaceTypes.CarState = _find_car_state(car_id)
-	if car == null or car.is_finished:
+	if car == null or car.is_finished or car.is_in_pit:
 		return
 	car.driver_mode = mode
 
@@ -305,14 +332,79 @@ func get_driver_mode(car_id: String) -> int:
 	return car.driver_mode
 
 
-func is_drs_enabled() -> bool:
+func issue_team_order(car_id: String, order: int, target_car_id: String = "") -> void:
+	if not TeamOrdersModule.is_valid_order(order):
+		return
+	var car: RaceTypes.CarState = _find_car_state(car_id)
+	if car == null or car.is_finished:
+		return
+	if order == TeamOrdersModule.Order.NONE:
+		clear_team_order(car_id)
+		return
+
+	var target: RaceTypes.CarState = _find_car_state(target_car_id)
+	if target == null or target.id == car.id or target.is_finished or target.is_in_pit:
+		return
+
+	if order == TeamOrdersModule.Order.LET_THROUGH or order == TeamOrdersModule.Order.HOLD_POSITION:
+		if car.team_id.is_empty() or car.team_id != target.team_id:
+			return
+	elif order == TeamOrdersModule.Order.DEFEND:
+		if car.team_id.is_empty() or car.team_id == target.team_id:
+			return
+
+	car.team_order = order
+	car.team_order_target = target.id
+	_team_order_issued_time[car.id] = _race_time
+
+
+func clear_team_order(car_id: String) -> void:
+	var car: RaceTypes.CarState = _find_car_state(car_id)
+	if car == null:
+		return
+	car.team_order = TeamOrdersModule.Order.NONE
+	car.team_order_target = ""
+	_team_order_issued_time.erase(car.id)
+
+
+func get_safety_car_phase() -> int:
+	if _safety_car_controller == null:
+		return RaceTypes.SafetyCarPhase.GREEN
+	return _safety_car_controller.get_phase()
+
+
+func get_safety_car_laps_remaining() -> int:
+	if _safety_car_controller == null:
+		return 0
+	return _safety_car_controller.get_laps_remaining()
+
+
+func is_drs_configured() -> bool:
 	return _drs_system != null and _drs_system.is_configured()
+
+
+func is_drs_enabled() -> bool:
+	return is_drs_runtime_enabled()
+
+
+func is_drs_available() -> bool:
+	return is_drs_configured()
+
+
+func is_drs_runtime_enabled() -> bool:
+	return _drs_system != null and _drs_system.is_enabled()
 
 
 func get_drs_zones() -> Array:
 	if _drs_system == null:
 		return []
 	return _drs_system.get_zones()
+
+
+func get_drs_detection_threshold() -> float:
+	if _drs_system == null or not _drs_system.is_configured():
+		return 0.0
+	return _drs_system.get_detection_threshold()
 
 
 func get_next_compound_for_car(car_id: String) -> String:
@@ -370,6 +462,30 @@ func _validate_inputs(config: RaceTypes.RaceConfig, runtime: RaceTypes.RaceRunti
 			_validation_errors.append("overtaking.held_up_speed_buffer must be >= 0.")
 		if config.overtaking.cooldown_seconds < 0.0:
 			_validation_errors.append("overtaking.cooldown_seconds must be >= 0.")
+
+	if config.safety_car != null and config.safety_car.enabled:
+		if config.safety_car.trigger_probability_per_lap < 0.0 or config.safety_car.trigger_probability_per_lap > 1.0:
+			_validation_errors.append("safety_car.trigger_probability_per_lap must be in [0, 1].")
+		if config.safety_car.max_events < 0:
+			_validation_errors.append("safety_car.max_events must be >= 0.")
+		if config.safety_car.min_lap < 1:
+			_validation_errors.append("safety_car.min_lap must be >= 1.")
+		if config.safety_car.cooldown_laps < 0:
+			_validation_errors.append("safety_car.cooldown_laps must be >= 0.")
+		if config.safety_car.sc_laps_min <= 0 or config.safety_car.sc_laps_max < config.safety_car.sc_laps_min:
+			_validation_errors.append("safety_car SC laps range is invalid.")
+		if config.safety_car.vsc_laps_min <= 0 or config.safety_car.vsc_laps_max < config.safety_car.vsc_laps_min:
+			_validation_errors.append("safety_car VSC laps range is invalid.")
+		if config.safety_car.vsc_probability < 0.0 or config.safety_car.vsc_probability > 1.0:
+			_validation_errors.append("safety_car.vsc_probability must be in [0, 1].")
+		if config.safety_car.sc_speed_cap <= 0.0:
+			_validation_errors.append("safety_car.sc_speed_cap must be > 0.")
+		if config.safety_car.sc_leader_pace_ratio <= 0.0 or config.safety_car.sc_leader_pace_ratio > 1.0:
+			_validation_errors.append("safety_car.sc_leader_pace_ratio must be in (0, 1].")
+		if config.safety_car.vsc_speed_multiplier <= 0.0 or config.safety_car.vsc_speed_multiplier >= 1.0:
+			_validation_errors.append("safety_car.vsc_speed_multiplier must be in (0, 1).")
+		if config.safety_car.restart_drs_lock_laps < 0:
+			_validation_errors.append("safety_car.restart_drs_lock_laps must be >= 0.")
 
 	if config.pit != null and config.pit.enabled:
 		if config.pit.pit_lane_speed_limit <= 0.0:
@@ -513,7 +629,14 @@ func _compute_car_speed(car: RaceTypes.CarState) -> void:
 		drs_mult = _drs_system.get_drs_multiplier(car)
 	speed *= drs_mult
 
-	car.strategy_multiplier = car.degradation_multiplier * car.fuel_multiplier * mode_pace * drs_mult
+	var race_control_mult: float = 1.0
+	if _safety_car_controller != null:
+		race_control_mult = _safety_car_controller.get_speed_multiplier()
+	speed *= race_control_mult
+	if _safety_car_controller != null:
+		speed = minf(speed, _safety_car_controller.get_speed_cap_for_car(car.position))
+
+	car.strategy_multiplier = car.degradation_multiplier * car.fuel_multiplier * mode_pace * drs_mult * race_control_mult
 
 	speed = maxf(speed, 0.001)
 	car.effective_speed_units_per_sec = speed
@@ -620,6 +743,147 @@ func _update_standings() -> void:
 	StandingsCalculator.update_positions(_cars)
 
 
+func _sync_race_control_states() -> void:
+	var allow_overtaking: bool = true
+	var allow_drs: bool = true
+	if _safety_car_controller != null and _safety_car_controller.is_enabled():
+		allow_overtaking = _safety_car_controller.is_overtaking_allowed()
+		allow_drs = _safety_car_controller.is_drs_allowed()
+
+	if _overtaking_manager != null:
+		_overtaking_manager.set_enabled(allow_overtaking)
+	if _drs_system != null:
+		_drs_system.set_enabled(allow_drs)
+
+
+func _update_race_control_on_leader_lap() -> void:
+	if _safety_car_controller == null or not _safety_car_controller.is_enabled():
+		return
+	var leader_lap_count: int = _get_leader_lap_count()
+	if leader_lap_count <= _last_leader_lap_for_race_control:
+		return
+	for lap in range(_last_leader_lap_for_race_control + 1, leader_lap_count + 1):
+		var race_lap: int = lap + 1
+		var total_laps: int = _config.total_laps if _config != null else 0
+		_safety_car_controller.on_leader_lap_started(race_lap, total_laps)
+	_last_leader_lap_for_race_control = leader_lap_count
+	_sync_race_control_states()
+
+
+func _get_leader_lap_count() -> int:
+	var leader_lap: int = 0
+	for car in _cars:
+		if car == null:
+			continue
+		if car.position == 1:
+			return car.lap_count
+		leader_lap = maxi(leader_lap, car.lap_count)
+	return leader_lap
+
+
+func _apply_safety_car_following_constraints() -> void:
+	if _safety_car_controller == null:
+		return
+	var phase: int = _safety_car_controller.get_phase()
+	if phase != RaceTypes.SafetyCarPhase.SC_DEPLOYED and phase != RaceTypes.SafetyCarPhase.SC_ENDING:
+		return
+	if _cars.size() <= 1:
+		return
+
+	var sorted_cars: Array = _cars.duplicate()
+	sorted_cars.sort_custom(func(a: RaceTypes.CarState, b: RaceTypes.CarState) -> bool:
+		return a.total_distance > b.total_distance
+	)
+
+	for idx in range(1, sorted_cars.size()):
+		var ahead: RaceTypes.CarState = sorted_cars[idx - 1]
+		var behind: RaceTypes.CarState = sorted_cars[idx]
+		if ahead == null or behind == null:
+			continue
+		if behind.is_in_pit or ahead.is_in_pit:
+			continue
+		var capped: float = ahead.effective_speed_units_per_sec + 0.15
+		behind.effective_speed_units_per_sec = minf(behind.effective_speed_units_per_sec, capped)
+
+
+func _apply_team_orders() -> void:
+	if _cars.is_empty():
+		return
+	var by_id: Dictionary = {}
+	for car in _cars:
+		if car != null:
+			by_id[car.id] = car
+
+	for car in _cars:
+		if car == null:
+			continue
+		if _maybe_clear_invalid_team_order(car, by_id):
+			continue
+
+		var target: RaceTypes.CarState = by_id.get(car.team_order_target, null) as RaceTypes.CarState
+		match car.team_order:
+			TeamOrdersModule.Order.LET_THROUGH:
+				if not TeamOrdersModule.should_yield(car, target):
+					clear_team_order(car.id)
+					continue
+				var issued_time: float = float(_team_order_issued_time.get(car.id, _race_time))
+				if (_race_time - issued_time) > TeamOrdersModule.LET_THROUGH_TIMEOUT_SECONDS:
+					clear_team_order(car.id)
+					continue
+				if target.total_distance > car.total_distance:
+					clear_team_order(car.id)
+					continue
+				var gap_to_teammate: float = car.total_distance - target.total_distance
+				if gap_to_teammate > 0.0 and gap_to_teammate <= TeamOrdersModule.LET_THROUGH_MAX_GAP:
+					var yield_cap: float = maxf(target.effective_speed_units_per_sec * 0.85, 0.001)
+					car.effective_speed_units_per_sec = minf(
+						car.effective_speed_units_per_sec * TeamOrdersModule.LET_THROUGH_PACE_SCALE,
+						yield_cap
+					)
+			TeamOrdersModule.Order.HOLD_POSITION:
+				if not TeamOrdersModule.should_hold_position(car, target):
+					clear_team_order(car.id)
+					continue
+				var gap_to_teammate_ahead: float = target.total_distance - car.total_distance
+				if gap_to_teammate_ahead > 0.0 and gap_to_teammate_ahead <= TeamOrdersModule.HOLD_POSITION_GAP:
+					car.effective_speed_units_per_sec = minf(
+						car.effective_speed_units_per_sec,
+						target.effective_speed_units_per_sec + 0.05
+					)
+			TeamOrdersModule.Order.DEFEND:
+				if not TeamOrdersModule.should_defend(car, target):
+					clear_team_order(car.id)
+					continue
+				var gap_to_rival: float = car.total_distance - target.total_distance
+				if gap_to_rival > 0.0 and gap_to_rival <= TeamOrdersModule.DEFEND_MAX_GAP:
+					car.effective_speed_units_per_sec *= TeamOrdersModule.DEFEND_PACE_SCALE
+					target.effective_speed_units_per_sec = minf(
+						target.effective_speed_units_per_sec,
+						car.effective_speed_units_per_sec + TeamOrdersModule.DEFEND_BUFFER
+					)
+					target.is_held_up = true
+					target.held_up_by = car.id
+
+
+func _maybe_clear_invalid_team_order(car: RaceTypes.CarState, by_id: Dictionary) -> bool:
+	if car.team_order == TeamOrdersModule.Order.NONE:
+		return false
+	if car.is_finished or car.is_in_pit:
+		clear_team_order(car.id)
+		return true
+	if not by_id.has(car.team_order_target):
+		clear_team_order(car.id)
+		return true
+	var target: RaceTypes.CarState = by_id[car.team_order_target] as RaceTypes.CarState
+	if target == null or target.is_finished or target.is_in_pit:
+		clear_team_order(car.id)
+		return true
+	if target.id == car.id:
+		clear_team_order(car.id)
+		return true
+	return false
+
+
 func _resolve_degradation_config_for_car(
 	car_config: RaceTypes.CarConfig,
 	global_config: RaceTypes.DegradationConfig
@@ -644,11 +908,15 @@ func _apply_initial_dynamic_state(index: int, car: RaceTypes.CarState) -> void:
 	if car == null:
 		return
 
+	var car_config: RaceTypes.CarConfig = _config.cars[index]
+	car.team_id = car_config.team_id
+	car.team_order = TeamOrdersModule.Order.NONE
+	car.team_order_target = ""
+
 	if _stint_tracker != null:
 		_sync_stint_fields(car)
 
 	if _fuel_config != null:
-		var car_config: RaceTypes.CarConfig = _config.cars[index]
 		if car_config.starting_fuel_kg > 0.0:
 			car.fuel_kg = minf(car_config.starting_fuel_kg, _fuel_config.max_capacity_kg)
 		else:

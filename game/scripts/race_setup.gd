@@ -5,6 +5,7 @@ const TeamRegistry = preload("res://scripts/team_registry.gd")
 @onready var _track_list: ItemList = %TrackList
 @onready var _laps_spinbox: SpinBox = %LapsSpinBox
 @onready var _fuel_toggle: CheckButton = %FuelToggle
+@onready var _player_team_option: OptionButton = %PlayerTeamOption
 @onready var _teams_grid: GridContainer = %TeamsGrid
 @onready var _start_button: Button = %StartButton
 @onready var _back_button: Button = %BackButton
@@ -19,6 +20,7 @@ func _ready() -> void:
 	_track_list.item_selected.connect(_on_track_selected)
 
 	_populate_tracks()
+	_populate_player_team_option()
 	_populate_teams()
 	_fuel_toggle.button_pressed = true
 
@@ -88,6 +90,26 @@ func _populate_teams() -> void:
 		_teams_grid.add_child(drivers_label)
 
 
+func _populate_player_team_option() -> void:
+	_player_team_option.clear()
+	var game_state: Node = get_node_or_null("/root/GameState")
+	if game_state == null:
+		return
+
+	var selected_index: int = 0
+	for idx in range(game_state.teams_data.size()):
+		var team: Dictionary = game_state.teams_data[idx]
+		var team_name: String = String(team.get("name", "Unknown"))
+		var team_id: String = String(team.get("id", "")).strip_edges()
+		_player_team_option.add_item(team_name)
+		_player_team_option.set_item_metadata(idx, team_id)
+		if team_id == String(game_state.player_team_id):
+			selected_index = idx
+
+	if _player_team_option.item_count > 0:
+		_player_team_option.select(selected_index)
+
+
 func _on_track_selected(index: int) -> void:
 	_update_laps_from_selection()
 
@@ -118,6 +140,8 @@ func _on_start_pressed() -> void:
 	game_state.selected_track_id = _track_ids[selected[0]]
 	game_state.selected_laps = int(_laps_spinbox.value)
 	game_state.fuel_enabled = _fuel_toggle.button_pressed
+	if _player_team_option.item_count > 0 and _player_team_option.selected >= 0:
+		game_state.player_team_id = String(_player_team_option.get_item_metadata(_player_team_option.selected))
 
 	_status_label.text = "Loading..."
 	_start_button.disabled = true

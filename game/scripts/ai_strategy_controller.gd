@@ -8,16 +8,19 @@ const DriverModeModule = preload("res://sim/src/driver_mode.gd")
 var _pit_thresholds: Dictionary = {}
 var _available_compounds: PackedStringArray = PackedStringArray()
 var _stint_at_last_request: Dictionary = {}
+var _player_team_id: String = ""
 
 const _MODE_PUSH_GAP_THRESHOLD: float = 80.0  # Push when within this distance of car ahead
 const _MODE_CONSERVE_TYRE_THRESHOLD: float = 0.45  # Conserve when tyre life below this
 const _MODE_CONSERVE_FUEL_THRESHOLD: float = 0.15  # Conserve when fuel ratio below this
+const _SC_PIT_TYRE_THRESHOLD: float = 0.60
 
 
-func configure(pit_thresholds: Dictionary, available_compounds: PackedStringArray) -> void:
+func configure(pit_thresholds: Dictionary, available_compounds: PackedStringArray, player_team_id: String = "") -> void:
 	_pit_thresholds = pit_thresholds
 	_available_compounds = available_compounds
 	_stint_at_last_request = {}
+	_player_team_id = player_team_id.strip_edges()
 
 
 func reset() -> void:
@@ -31,8 +34,40 @@ func evaluate(snapshot: RaceTypes.RaceSnapshot, simulator: RaceSimulator) -> voi
 		return
 
 	for car in snapshot.cars:
+		if _is_player_team_car(car):
+			continue
+		_evaluate_safety_car_pit(car, snapshot, simulator)
 		_evaluate_pit(car, simulator)
 		_evaluate_driver_mode(car, snapshot, simulator)
+
+
+func _evaluate_safety_car_pit(
+	car: RaceTypes.CarState,
+	snapshot: RaceTypes.RaceSnapshot,
+	simulator: RaceSimulator
+) -> void:
+	if not simulator.is_pit_enabled():
+		return
+	if car == null or car.is_finished or car.is_in_pit:
+		return
+	if simulator.has_pending_pit_request(car.id):
+		return
+
+	var phase: int = snapshot.safety_car_phase
+	var under_race_control: bool = (
+		phase == RaceTypes.SafetyCarPhase.SC_DEPLOYED
+		or phase == RaceTypes.SafetyCarPhase.VSC
+	)
+	if not under_race_control:
+		return
+	if car.tyre_life_ratio >= _SC_PIT_TYRE_THRESHOLD:
+		return
+
+	var next_compound: String = _get_next_compound(car.current_compound)
+	if next_compound.is_empty():
+		return
+	simulator.request_pit_stop(car.id, next_compound, -1.0)
+	_stint_at_last_request[car.id] = car.stint_number
 
 
 func _evaluate_pit(car: RaceTypes.CarState, simulator: RaceSimulator) -> void:
@@ -112,3 +147,9 @@ func _get_next_compound(current_compound: String) -> String:
 	# Pick next compound in the cycle, skipping current
 	var next_idx: int = (current_idx + 1) % _available_compounds.size()
 	return _available_compounds[next_idx]
+
+
+func _is_player_team_car(car: RaceTypes.CarState) -> bool:
+	if car == null or _player_team_id.is_empty():
+		return false
+	return car.team_id == _player_team_id

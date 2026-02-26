@@ -466,6 +466,86 @@ func test_normalized_pace_stays_consistent_across_track_segments() -> void:
 	assert(abs(fast_normalized - slow_normalized) < 0.001)
 
 
+func test_drs_detection_threshold_is_exposed_from_config() -> void:
+	var config := RaceTypes.RaceConfig.new()
+	config.track = _constant_track_profile(100.0)
+	config.cars.append(_car("car_1", 50.0))
+	config.drs = {
+		"enabled": true,
+		"detection_threshold": 42.0,
+		"speed_boost": 1.06,
+		"min_activation_lap": 1,
+		"zones": [
+			{
+				"detection_distance": 10.0,
+				"zone_start": 20.0,
+				"zone_end": 40.0
+			}
+		]
+	}
+
+	var runtime := RaceTypes.RaceRuntimeParams.new()
+	runtime.track_length = 100.0
+
+	var simulator := RaceSimulator.new()
+	simulator.initialize(config, runtime)
+	assert(simulator.is_ready())
+	assert(abs(simulator.get_drs_detection_threshold() - 42.0) < 0.0001)
+
+
+func test_safety_car_phase_populates_snapshot_and_gates_drs_runtime() -> void:
+	var config := RaceTypes.RaceConfig.new()
+	config.track = _constant_track_profile(100.0)
+	config.cars.append(_car("lead", 60.0))
+	config.cars.append(_car("chase", 59.0))
+	var overtaking := RaceTypes.OvertakingConfig.new()
+	overtaking.enabled = true
+	config.overtaking = overtaking
+	config.drs = {
+		"enabled": true,
+		"detection_threshold": 999.0,
+		"speed_boost": 1.06,
+		"min_activation_lap": 1,
+		"zones": [
+			{
+				"detection_distance": 0.0,
+				"zone_start": 0.0,
+				"zone_end": 100.0
+			}
+		]
+	}
+
+	var sc := RaceTypes.SafetyCarConfig.new()
+	sc.enabled = true
+	sc.trigger_probability_per_lap = 1.0
+	sc.max_events = 1
+	sc.min_lap = 2
+	sc.cooldown_laps = 0
+	sc.sc_laps_min = 3
+	sc.sc_laps_max = 3
+	sc.vsc_laps_min = 2
+	sc.vsc_laps_max = 2
+	sc.vsc_probability = 0.0
+	sc.sc_speed_cap = 25.0
+	sc.sc_leader_pace_ratio = 0.9
+	sc.vsc_speed_multiplier = 0.6
+	sc.restart_drs_lock_laps = 2
+	config.safety_car = sc
+
+	var runtime := RaceTypes.RaceRuntimeParams.new()
+	runtime.track_length = 100.0
+
+	var simulator := RaceSimulator.new()
+	simulator.initialize(config, runtime)
+	assert(simulator.is_ready())
+
+	simulator.step(2.1)
+	var snapshot: RaceTypes.RaceSnapshot = simulator.get_snapshot()
+	assert(snapshot.safety_car_phase == RaceTypes.SafetyCarPhase.SC_DEPLOYED)
+	assert(snapshot.safety_car_laps_remaining > 0)
+	assert(not simulator.is_drs_runtime_enabled())
+
+
 func _build_simulator(car_configs: Array, track_length: float) -> RaceSimulator:
 	var config := RaceTypes.RaceConfig.new()
 	config.track = _constant_track_profile(track_length)

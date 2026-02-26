@@ -7,12 +7,14 @@ signal speed_selected(speed_scale: float)
 signal pit_requested(car_id: String, compound: String, fuel_kg: float)
 signal pit_cancelled(car_id: String)
 signal driver_mode_requested(car_id: String, mode: int)
+signal team_order_requested(car_id: String, order: int, target_car_id: String)
 signal continue_requested()
 signal main_menu_requested()
 
 const RaceTypes = preload("res://sim/src/race_types.gd")
 const StandingsCalculator = preload("res://sim/src/standings_calculator.gd")
 const DriverModeModule = preload("res://sim/src/driver_mode.gd")
+const TeamOrdersModule = preload("res://sim/src/team_orders.gd")
 
 enum DataMode { INTERVAL, LAST_LAP, TYRE, FUEL }
 
@@ -64,6 +66,7 @@ var _continue_button: Button = null
 var _menu_button: Button = null
 var _data_mode: DataMode = DataMode.INTERVAL
 var _available_modes: Array[DataMode] = []
+var _player_team_id: String = ""
 
 # Radio message panel
 var _radio_panel: PanelContainer = null
@@ -163,6 +166,10 @@ func configure_strategy_ui(
 	_apply_mode_label()
 
 
+func configure_player_team(team_id: String) -> void:
+	_player_team_id = team_id.strip_edges()
+
+
 func set_status_message(message: String) -> void:
 	_state_label.text = message
 
@@ -222,7 +229,7 @@ func render(
 		# Team color bar
 		row["color_bar"].color = team_color
 
-		# Data value — changes based on current mode
+		# Data value - changes based on current mode
 		var data_label: Label = row["data"]
 		_render_data_cell(data_label, car, interval_map, winner_finish_time)
 
@@ -245,17 +252,40 @@ func render(
 
 		# Driver mode button
 		var mode_btn: Button = row["mode_button"]
-		mode_btn.visible = not car.is_finished
+		var is_player_car: bool = _is_player_car(car)
+		mode_btn.visible = not car.is_finished and is_player_car
 		mode_btn.set_meta("car_id", car.id)
 		mode_btn.set_meta("current_mode", car.driver_mode)
 
 		# Pit button
 		var pit_button: Button = row["pit_button"]
-		pit_button.visible = _pit_enabled and not car.is_finished
+		pit_button.visible = _pit_enabled and not car.is_finished and is_player_car
 		pit_button.text = "X" if has_pending_pit else "P"
 		pit_button.set_meta("car_id", car.id)
 		pit_button.set_meta("pending", has_pending_pit)
 		pit_button.set_meta("current_compound", _resolve_compound_for_request(car, pit_request))
+
+		# Team order label and button
+		var order_label: Label = row["team_order_label"]
+		order_label.text = TeamOrdersModule.get_order_short(car.team_order)
+		order_label.add_theme_color_override("font_color", Color(0.72, 0.8, 0.95))
+
+		var order_button: Button = row["team_order_button"]
+		order_button.visible = not car.is_finished and is_player_car
+		order_button.set_meta("car_id", car.id)
+		order_button.set_meta("current_order", car.team_order)
+		var teammate_id: String = _find_teammate_id(car, cars_sorted)
+		var defend_target_id: String = _find_defend_target_id(car, cars_sorted)
+		order_button.set_meta("teammate_id", teammate_id)
+		order_button.set_meta("defend_target_id", defend_target_id)
+		order_button.disabled = (
+			not is_player_car
+			or (
+				car.team_order == TeamOrdersModule.Order.NONE
+				and teammate_id.is_empty()
+				and defend_target_id.is_empty()
+			)
+		)
 
 		# Row container order matches board position
 		var row_hbox: HBoxContainer = row["container"]
@@ -365,6 +395,37 @@ func _cycle_driver_mode(current: int) -> int:
 			return DriverModeModule.Mode.STANDARD
 
 
+func _on_team_order_button_pressed(order_button: Button) -> void:
+	if order_button == null:
+		return
+	var car_id: String = String(order_button.get_meta("car_id", "")).strip_edges()
+	if car_id.is_empty():
+		return
+	var current_order: int = int(order_button.get_meta("current_order", TeamOrdersModule.Order.NONE))
+	var next_order: int = _cycle_team_order(current_order)
+	var target_id: String = ""
+	match next_order:
+		TeamOrdersModule.Order.LET_THROUGH, TeamOrdersModule.Order.HOLD_POSITION:
+			target_id = String(order_button.get_meta("teammate_id", "")).strip_edges()
+		TeamOrdersModule.Order.DEFEND:
+			target_id = String(order_button.get_meta("defend_target_id", "")).strip_edges()
+	emit_signal("team_order_requested", car_id, next_order, target_id)
+
+
+func _cycle_team_order(current: int) -> int:
+	match current:
+		TeamOrdersModule.Order.NONE:
+			return TeamOrdersModule.Order.LET_THROUGH
+		TeamOrdersModule.Order.LET_THROUGH:
+			return TeamOrdersModule.Order.HOLD_POSITION
+		TeamOrdersModule.Order.HOLD_POSITION:
+			return TeamOrdersModule.Order.DEFEND
+		TeamOrdersModule.Order.DEFEND:
+			return TeamOrdersModule.Order.NONE
+		_:
+			return TeamOrdersModule.Order.NONE
+
+
 func _on_pit_button_pressed(pit_button: Button) -> void:
 	if pit_button == null:
 		return
@@ -461,6 +522,14 @@ func _create_row() -> Dictionary:
 	mode_label.text = "S"
 	hbox.add_child(mode_label)
 
+	# Team order indicator
+	var team_order_label := Label.new()
+	team_order_label.custom_minimum_size = Vector2(14, 0)
+	team_order_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	team_order_label.add_theme_font_size_override("font_size", 9)
+	team_order_label.text = "-"
+	hbox.add_child(team_order_label)
+
 	# Driver mode cycle button
 	var mode_button := Button.new()
 	mode_button.text = "M"
@@ -469,6 +538,15 @@ func _create_row() -> Dictionary:
 	mode_button.add_theme_font_size_override("font_size", 9)
 	mode_button.pressed.connect(func() -> void: _on_mode_button_pressed(mode_button))
 	hbox.add_child(mode_button)
+
+	# Team order cycle button
+	var team_order_button := Button.new()
+	team_order_button.text = "O"
+	team_order_button.focus_mode = Control.FOCUS_NONE
+	team_order_button.custom_minimum_size = Vector2(22, 18)
+	team_order_button.add_theme_font_size_override("font_size", 9)
+	team_order_button.pressed.connect(func() -> void: _on_team_order_button_pressed(team_order_button))
+	hbox.add_child(team_order_button)
 
 	# Pit button (small)
 	var pit_button := Button.new()
@@ -490,7 +568,9 @@ func _create_row() -> Dictionary:
 		"data": data_label,
 		"drs_label": drs_label,
 		"mode_label": mode_label,
+		"team_order_label": team_order_label,
 		"mode_button": mode_button,
+		"team_order_button": team_order_button,
 		"pit_button": pit_button,
 	}
 
@@ -591,9 +671,11 @@ func _build_state_message(snapshot: RaceTypes.RaceSnapshot, time_scale: float) -
 		RaceTypes.RaceState.FINISHED:
 			race_status = "Race Over"
 
-	return "%s%s | %.0fx | %s" % [
+	var race_control: String = _format_race_control(snapshot)
+	return "%s%s%s | %.0fx | %s" % [
 		"PAUSED | " if _is_paused else "",
 		race_status,
+		race_control,
 		time_scale,
 		_format_race_time(snapshot.race_time)
 	]
@@ -644,6 +726,56 @@ func _get_winner_finish_time(snapshot: RaceTypes.RaceSnapshot) -> float:
 		if car != null and car.id == winner_id:
 			return car.finish_time
 	return -1.0
+
+
+func _format_race_control(snapshot: RaceTypes.RaceSnapshot) -> String:
+	match snapshot.safety_car_phase:
+		RaceTypes.SafetyCarPhase.SC_DEPLOYED:
+			return " | SC (%d)" % snapshot.safety_car_laps_remaining
+		RaceTypes.SafetyCarPhase.SC_ENDING:
+			return " | SC ENDING"
+		RaceTypes.SafetyCarPhase.VSC:
+			return " | VSC (%d)" % snapshot.safety_car_laps_remaining
+		_:
+			return ""
+
+
+func _is_player_car(car: RaceTypes.CarState) -> bool:
+	if car == null:
+		return false
+	if _player_team_id.is_empty():
+		return true
+	return car.team_id == _player_team_id
+
+
+func _find_teammate_id(car: RaceTypes.CarState, cars_sorted: Array[RaceTypes.CarState]) -> String:
+	if car == null or car.team_id.is_empty():
+		return ""
+	for other in cars_sorted:
+		if other == null or other.id == car.id:
+			continue
+		if other.team_id == car.team_id and not other.is_finished:
+			return other.id
+	return ""
+
+
+func _find_defend_target_id(car: RaceTypes.CarState, cars_sorted: Array[RaceTypes.CarState]) -> String:
+	if car == null:
+		return ""
+	var closest_gap: float = INF
+	var target_id: String = ""
+	for other in cars_sorted:
+		if other == null or other.id == car.id or other.is_finished:
+			continue
+		if not car.team_id.is_empty() and other.team_id == car.team_id:
+			continue
+		if other.total_distance >= car.total_distance:
+			continue
+		var gap: float = car.total_distance - other.total_distance
+		if gap < closest_gap:
+			closest_gap = gap
+			target_id = other.id
+	return target_id
 
 
 # --- Radio Message Panel ---

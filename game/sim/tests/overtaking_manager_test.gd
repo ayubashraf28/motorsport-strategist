@@ -136,6 +136,21 @@ func test_reset_clears_cooldowns() -> void:
 	assert(behind.is_held_up)
 
 
+func test_runtime_set_enabled_gates_interactions() -> void:
+	var manager := _manager(true, 50.0, 2.0, 0.1, 3.0)
+	var ahead := _car("a", 100.0, 100.0, 5.0)
+	var behind := _car("b", 90.0, 90.0, 6.0)
+
+	manager.set_enabled(false)
+	manager.process_interactions([ahead, behind], 1000.0, 0.0)
+	assert(not behind.is_held_up)
+	assert(behind.effective_speed_units_per_sec == 6.0)
+
+	manager.set_enabled(true)
+	manager.process_interactions([ahead, behind], 1000.0, 1.0)
+	assert(behind.is_held_up)
+
+
 func _manager(
 	enabled: bool,
 	proximity: float,

@@ -64,6 +64,7 @@ var _ai_strategy: AiStrategyController = null
 var _car_color_map: Dictionary = {}
 var _race_finished_handled: bool = false
 var _race_engineer: RaceEngineer = null
+var _player_team_id: String = ""
 
 
 func _ready() -> void:
@@ -94,15 +95,17 @@ func _process(delta: float) -> void:
 	# AI strategy evaluation after stepping
 	if _ai_strategy != null and not _is_paused:
 		_ai_strategy.evaluate(snapshot, _simulator)
+		snapshot = _simulator.get_snapshot()
 
 	# Race engineer radio messages
 	if _race_engineer != null and not _is_paused:
-		var drs_threshold: float = 0.0
-		if _simulator.is_drs_enabled():
-			var drs_zones: Array = _simulator.get_drs_zones()
-			if not drs_zones.is_empty():
-				drs_threshold = 50.0  # default detection threshold
-		var radio_messages: Array = _race_engineer.evaluate(snapshot, drs_threshold)
+		var drs_threshold: float = _simulator.get_drs_detection_threshold()
+		var radio_messages: Array = _race_engineer.evaluate(
+			snapshot,
+			drs_threshold,
+			_simulator.get_safety_car_phase(),
+			_simulator.get_safety_car_laps_remaining()
+		)
 		if not radio_messages.is_empty():
 			_hud.show_radio_messages(radio_messages, snapshot.race_time)
 
@@ -154,6 +157,7 @@ func _try_load_from_game_state() -> bool:
 	_active_config = game_state.active_config
 	_config_source_path = game_state.track_geometry_asset_path
 	_car_color_map = game_state.car_colors
+	_player_team_id = String(game_state.player_team_id).strip_edges()
 	return true
 
 
@@ -170,8 +174,9 @@ func _load_config_from_disk() -> bool:
 		_hud.set_error("Race config could not be parsed.")
 		return false
 	if _active_config.cars.is_empty():
-		_hud.set_empty("No cars configured. Add cars in config/race_v3.json, config/race_v2.json, config/race_v1.1.json, or config/race_v1.json.")
+		_hud.set_empty("No cars configured. Add cars in config/race_v4.json, config/race_v3.json, config/race_v2.json, config/race_v1.1.json, or config/race_v1.json.")
 		return false
+	_player_team_id = _resolve_player_team_from_config()
 	return true
 
 
@@ -246,6 +251,8 @@ func _initialize_simulator() -> bool:
 	_time_scale = _sanitize_time_scale(_active_config.default_time_scale)
 	_is_paused = false
 	_race_finished_handled = false
+	if _player_team_id.is_empty():
+		_player_team_id = _resolve_player_team_from_config()
 	_step_runner.reset()
 	_build_car_nodes(_simulator.get_snapshot().cars)
 	_configure_debug_overlays(runtime.track_length)
@@ -255,6 +262,7 @@ func _initialize_simulator() -> bool:
 		_simulator.get_available_compounds(),
 		_simulator.get_fuel_capacity_kg()
 	)
+	_hud.configure_player_team(_player_team_id)
 	_hud.set_car_colors(_car_color_map)
 	_initialize_ai_strategy()
 	_race_engineer = RaceEngineer.new()
@@ -282,7 +290,7 @@ func _initialize_ai_strategy() -> void:
 			if car != null:
 				thresholds[car.id] = 0.35
 
-	_ai_strategy.configure(thresholds, compounds)
+	_ai_strategy.configure(thresholds, compounds, _player_team_id)
 
 
 func _build_car_nodes(cars: Array) -> void:
@@ -303,6 +311,20 @@ func _build_car_nodes(cars: Array) -> void:
 		_cars_layer.add_child(dot)
 		_car_nodes[car.id] = dot
 		car_index += 1
+
+
+func _resolve_player_team_from_config() -> String:
+	if _active_config == null:
+		return ""
+	if not _player_team_id.is_empty():
+		return _player_team_id
+	for car_config in _active_config.cars:
+		if car_config == null:
+			continue
+		var team_id: String = car_config.team_id.strip_edges()
+		if not team_id.is_empty():
+			return team_id
+	return ""
 
 
 func _apply_snapshot(snapshot: RaceTypes.RaceSnapshot) -> void:
@@ -341,6 +363,7 @@ func _connect_ui_signals() -> void:
 	_hud.pit_requested.connect(_on_pit_requested)
 	_hud.pit_cancelled.connect(_on_pit_cancelled)
 	_hud.driver_mode_requested.connect(_on_driver_mode_requested)
+	_hud.team_order_requested.connect(_on_team_order_requested)
 	_hud.continue_requested.connect(_on_continue_requested)
 	_hud.main_menu_requested.connect(_on_main_menu_requested)
 
@@ -358,18 +381,44 @@ func _on_speed_selected(speed_scale: float) -> void:
 
 
 func _on_pit_requested(car_id: String, compound: String, fuel_kg: float) -> void:
-	if _simulator != null:
+	if _simulator != null and _is_player_controlled_car(car_id):
 		_simulator.request_pit_stop(car_id, compound, fuel_kg)
 
 
 func _on_pit_cancelled(car_id: String) -> void:
-	if _simulator != null:
+	if _simulator != null and _is_player_controlled_car(car_id):
 		_simulator.cancel_pit_stop(car_id)
 
 
 func _on_driver_mode_requested(car_id: String, mode: int) -> void:
-	if _simulator != null:
+	if _simulator != null and _is_player_controlled_car(car_id):
 		_simulator.set_driver_mode(car_id, mode)
+
+
+func _on_team_order_requested(car_id: String, order: int, target_car_id: String) -> void:
+	if _simulator == null or not _is_player_controlled_car(car_id):
+		return
+	if order == 0:
+		_simulator.clear_team_order(car_id)
+	else:
+		_simulator.issue_team_order(car_id, order, target_car_id)
+
+
+func _is_player_controlled_car(car_id: String) -> bool:
+	if _simulator == null:
+		return false
+	var clean_car_id: String = car_id.strip_edges()
+	if clean_car_id.is_empty():
+		return false
+	if _player_team_id.is_empty():
+		return true
+
+	var snapshot: RaceTypes.RaceSnapshot = _simulator.get_snapshot()
+	for raw_car in snapshot.cars:
+		var car: RaceTypes.CarState = raw_car as RaceTypes.CarState
+		if car != null and car.id == clean_car_id:
+			return car.team_id == _player_team_id
+	return false
 
 
 func _on_continue_requested() -> void:

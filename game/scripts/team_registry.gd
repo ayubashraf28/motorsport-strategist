@@ -34,6 +34,7 @@ static func build_car_configs(teams_data: Array, base_v_ref: float, fuel_capacit
 	for team in teams_data:
 		var v_ref: float = base_v_ref + team.get("v_ref_offset", 0.0)
 		var compound: String = team.get("starting_compound", "medium")
+		var team_id: String = String(team.get("id", "")).strip_edges()
 		for driver in team.get("drivers", []):
 			var car_config: RaceTypes.CarConfig = RaceTypes.CarConfig.new()
 			car_config.id = driver.get("id", "")
@@ -41,6 +42,7 @@ static func build_car_configs(teams_data: Array, base_v_ref: float, fuel_capacit
 			car_config.v_ref = v_ref
 			car_config.starting_compound = compound
 			car_config.starting_fuel_kg = fuel_capacity_kg
+			car_config.team_id = team_id
 			cars.append(car_config)
 	return cars
 
@@ -83,3 +85,12 @@ static func get_car_colors(teams_data: Array) -> Dictionary:
 		for driver in team.get("drivers", []):
 			colors[driver.get("id", "")] = color
 	return colors
+
+
+static func get_team_ids(teams_data: Array) -> PackedStringArray:
+	var ids: PackedStringArray = PackedStringArray()
+	for team in teams_data:
+		var team_id: String = String(team.get("id", "")).strip_edges()
+		if not team_id.is_empty():
+			ids.append(team_id)
+	return ids
